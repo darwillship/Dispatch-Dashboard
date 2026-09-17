@@ -43,9 +43,9 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid #d1d5db;bord
 </style>
 </head>
 <body>
-<header><div><h1>Dispatch Dashboard</h1><p>Driver & Route Management · Build 1.6.2</p></div><div class="status"><span class="status-dot"></span><span id="connectionStatus">Connecting...</span></div></header>
+<header><div><h1>Dispatch Dashboard</h1><p>Driver & Route Management · Build 1.7.0</p></div><div class="status"><span class="status-dot"></span><span id="connectionStatus">Connecting...</span></div></header>
 <div class="container">
-<div class="topbar"><div><h2>Dispatch Board</h2><p>Manage routes, drivers and daily assignments.</p></div><div class="actions"><button class="secondary" onclick="loadTasks()">Refresh</button><button class="primary" onclick="openCreateRoute()">+ Create Route</button></div></div>
+<div class="topbar"><div><h2>Dispatch Board</h2><p>Manage routes, drivers and daily assignments.</p></div><div class="actions"><button class="secondary" onclick="loadTasks()">Refresh</button><button class="btn" onclick="openHistory()">Route History</button><button class="primary" onclick="openCreateRoute()">+ Create Route</button></div></div>
 <div class="stats">
 <div class="stat"><div class="stat-label">Total Routes</div><div class="stat-number" id="totalCount">0</div></div>
 <div class="stat"><div class="stat-label">Assigned</div><div class="stat-number" id="assignedCount">0</div></div>
@@ -54,6 +54,14 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid #d1d5db;bord
 </div>
 <div class="panel"><div class="panel-header"><h3>Driver Dispatch Board</h3><span class="small" id="lastUpdated"></span></div><div id="taskList" class="driver-board"><div class="empty">Loading drivers and routes...</div></div></div>
 </div>
+
+<div class="modal" id="historyModal"><div class="modal-card" style="max-width:1000px">
+<div class="modal-head"><div><h3>Route History</h3><p class="small">Previous-day routes stay saved in Supabase.</p></div><button class="close" onclick="closeHistory()">×</button></div>
+<div class="modal-body"><div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:15px">
+<div class="field" style="max-width:220px"><label>History Date</label><input id="historyDate" type="date"></div>
+<button class="btn" onclick="renderHistory()">View Date</button></div>
+<div id="historyList" class="task-list"><div class="empty">Choose a date to view archived routes.</div></div></div>
+</div></div>
 
 <div class="modal" id="routeModal"><div class="modal-card">
 <div class="modal-head"><div><h3 id="modalTitle">Create Route</h3><p class="small">Create or update a driver task.</p></div><button class="close" type="button" onclick="closeCreateRoute()">×</button></div>
@@ -171,6 +179,15 @@ function applySavedOrder(tasks){
 function saveOrder(){
  localStorage.setItem("dispatchTaskOrder",JSON.stringify(currentTasks.map(t=>t.id)));
 }
+function localYMD(value){
+ if(!value)return "";
+ const d=new Date(value),y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");
+ return `${y}-${m}-${day}`;
+}
+function todayYMD(){return localYMD(new Date());}
+function taskDay(t){return localYMD(t.scheduled_at||t.created_at);}
+function isTodayTask(t){return taskDay(t)===todayYMD();}
+
 
 async function loadTasks(){
  const list=document.getElementById("taskList"),conn=document.getElementById("connectionStatus");
@@ -178,7 +195,8 @@ async function loadTasks(){
  await loadDrivers();
  const {data,error}=await db.from("dispatch_tasks").select("*").order("scheduled_at",{ascending:true,nullsFirst:false});
  if(error){conn.textContent="Connection Error";list.innerHTML='<div class="error">'+safe(error.message)+'</div>';return;}
- conn.textContent="Supabase Connected";currentTasks=applySavedOrder(data||[]);
+ conn.textContent="Supabase Connected";
+ currentTasks=applySavedOrder((data||[]).filter(isTodayTask));
  document.getElementById("lastUpdated").textContent="Updated "+new Date().toLocaleTimeString();
  updateStats(currentTasks);renderTasks(currentTasks);
 }
@@ -260,6 +278,21 @@ function setLocationForEdit(type,name,address){
  if(idx>=0){sel.value=String(idx);applyLocation(type);}
  else{sel.value="custom";applyLocation(type);document.getElementById(type+"_name").value=name||"";document.getElementById(type+"_address").value=address||"";}
 }
+function openHistory(){
+ const input=document.getElementById("historyDate"),d=new Date();d.setDate(d.getDate()-1);
+ input.value=localYMD(d);document.getElementById("historyModal").classList.add("show");renderHistory();
+}
+function closeHistory(){document.getElementById("historyModal").classList.remove("show");}
+async function renderHistory(){
+ const host=document.getElementById("historyList"),date=document.getElementById("historyDate").value;
+ if(!date){host.innerHTML='<div class="empty">Choose a date.</div>';return;}
+ host.innerHTML='<div class="empty">Loading route history...</div>';
+ const start=new Date(date+"T00:00:00"),end=new Date(date+"T23:59:59.999");
+ const {data,error}=await db.from("dispatch_tasks").select("*").gte("scheduled_at",start.toISOString()).lte("scheduled_at",end.toISOString()).order("scheduled_at",{ascending:true});
+ if(error){host.innerHTML='<div class="error">'+safe(error.message)+'</div>';return;}
+ if(!data?.length){host.innerHTML='<div class="empty">No routes found for this date.</div>';return;}
+ host.innerHTML=data.map(t=>`<div class="task-card"><div><div class="task-title">${safe(t.pickup_name)} → ${safe(t.delivery_name)}</div><div class="small">${safe(t.task_type)} · ${safe(t.status)}</div></div><div><div class="small"><strong>Scheduled</strong><br>${formatDate(t.scheduled_at)}</div><div class="small" style="margin-top:7px"><strong>Driver</strong><br>${safe(driverNames[t.assigned_driver_id]||t.assigned_driver_id)}</div></div><div><div class="small"><strong>Client / Job</strong><br>${safe(t.job_client)}</div><div class="small" style="margin-top:7px"><strong>Material</strong><br>${safe(t.material)}</div><div class="small" style="margin-top:7px"><strong>Pallets:</strong> ${safe(t.pallet_qty)}</div></div></div>`).join("");
+}
 async function openCreateRoute(){
  const form=document.getElementById("routeForm");form.reset();document.getElementById("editing_id").value="";
  document.getElementById("modalTitle").textContent="Create Route";document.getElementById("saveButton").textContent="Create Route";
@@ -285,6 +318,7 @@ async function deleteRoute(id){
  currentTasks=currentTasks.filter(x=>x.id!==id);saveOrder();await loadTasks();
 }
 document.getElementById("routeModal").addEventListener("click",e=>{if(e.target.id==="routeModal")closeCreateRoute();});
+document.getElementById("historyModal").addEventListener("click",e=>{if(e.target.id==="historyModal")closeHistory();});
 document.getElementById("routeForm").addEventListener("submit",async e=>{
  e.preventDefault();const msg=document.getElementById("formMessage"),btn=document.getElementById("saveButton");
  const pickupName=document.getElementById("pickup_name").value.trim(),deliveryName=document.getElementById("delivery_name").value.trim();
