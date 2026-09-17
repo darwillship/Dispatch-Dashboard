@@ -1,7 +1,4 @@
-FIXED VERSION
+DISPATCH DASHBOARD FIXED v2
 
-The previous build had a JavaScript syntax error in the vehicle-display code.
-That error stopped the Create Route button from opening the modal.
-
-Replace your current GitHub index.html with this fixed index.html.
-No Supabase/database changes are required.
+This build removes the vehicle regular-expression code entirely and uses a simpler parser.
+Replace the existing index.html in GitHub with this file, commit it, then hard-refresh the live page.

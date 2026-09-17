@@ -100,6 +100,14 @@ const VEHICLES=["McCook Van","McCook Hillside","Sterling 65","Sterling 66","Inte
 const safe=v=>(v===null||v===undefined||v==="")?"—":v;
 function formatDate(v){if(!v)return"Not scheduled";return new Date(v).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});}
 function statusClass(s){s=(s||"").toLowerCase();if(s==="completed")return"completed";if(s==="in progress"||s==="in_progress")return"in-progress";if(s==="assigned")return"assigned";return"pending";}
+function getVehicle(instructions){
+ const s=instructions||"";
+ const start=s.indexOf("[Vehicle: ");
+ if(start===-1)return null;
+ const end=s.indexOf("]",start);
+ if(end===-1)return null;
+ return s.slice(start+10,end);
+}
 
 function populateLocations(){
  const options='<option value="">Select location...</option>'+LOCATIONS.map((l,i)=>`<option value="${i}">${l.name}</option>`).join("")+'<option value="custom">Other / Custom Location</option>';
@@ -128,7 +136,7 @@ function updateStats(t){
 }
 function renderTasks(tasks){
  const list=document.getElementById("taskList");if(!tasks?.length){list.innerHTML='<div class="empty">No routes found.</div>';return;}
- list.innerHTML=tasks.map(t=>`<div class="task-card"><div><div class="task-title">${safe(t.title)}</div><div class="small">${safe(t.task_type)}</div><div style="margin-top:8px"><span class="badge ${statusClass(t.status)}">${safe(t.status)}</span></div></div><div><div class="route">${safe(t.pickup_name)}<span class="arrow">→</span>${safe(t.delivery_name)}</div><div class="small">Pickup: ${safe(t.pickup_address)}</div><div class="small">Delivery: ${safe(t.delivery_address)}</div></div><div><div class="small"><strong>Scheduled</strong><br>${formatDate(t.scheduled_at)}</div><div class="small" style="margin-top:7px"><strong>Driver ID</strong><br>${safe(t.assigned_driver_id)}</div><div class="small" style="margin-top:7px"><strong>Vehicle</strong><br>${safe((t.instructions||"").match(/\[Vehicle: ([^\]]+)\]/)?.[1])}</div></div><div><div class="small"><strong>Client / Job</strong><br>${safe(t.job_client)}</div><div class="small" style="margin-top:7px"><strong>Material</strong><br>${safe(t.material)}</div><div class="small" style="margin-top:7px"><strong>Pallets:</strong> ${safe(t.pallet_qty)}</div><div class="small" style="margin-top:7px">Priority: <span class="${(t.priority||"").toLowerCase()==="high"?"high":""}">${safe(t.priority)}</span></div></div></div>`).join("");
+ list.innerHTML=tasks.map(t=>`<div class="task-card"><div><div class="task-title">${safe(t.title)}</div><div class="small">${safe(t.task_type)}</div><div style="margin-top:8px"><span class="badge ${statusClass(t.status)}">${safe(t.status)}</span></div></div><div><div class="route">${safe(t.pickup_name)}<span class="arrow">→</span>${safe(t.delivery_name)}</div><div class="small">Pickup: ${safe(t.pickup_address)}</div><div class="small">Delivery: ${safe(t.delivery_address)}</div></div><div><div class="small"><strong>Scheduled</strong><br>${formatDate(t.scheduled_at)}</div><div class="small" style="margin-top:7px"><strong>Driver ID</strong><br>${safe(t.assigned_driver_id)}</div><div class="small" style="margin-top:7px"><strong>Vehicle</strong><br>${safe(getVehicle(t.instructions))}</div></div><div><div class="small"><strong>Client / Job</strong><br>${safe(t.job_client)}</div><div class="small" style="margin-top:7px"><strong>Material</strong><br>${safe(t.material)}</div><div class="small" style="margin-top:7px"><strong>Pallets:</strong> ${safe(t.pallet_qty)}</div><div class="small" style="margin-top:7px">Priority: <span class="${(t.priority||"").toLowerCase()==="high"?"high":""}">${safe(t.priority)}</span></div></div></div>`).join("");
 }
 async function loadDrivers(){
  const select=document.getElementById("assigned_driver_id");select.innerHTML='<option value="">Loading drivers...</option>';
