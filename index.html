@@ -1,573 +1,124 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dispatch Dashboard</title>
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: Arial, sans-serif;
-      background: #f4f6f8;
-      color: #17202a;
-    }
-
-    header {
-      background: #111827;
-      color: white;
-      padding: 22px 32px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    header h1 {
-      font-size: 24px;
-    }
-
-    header p {
-      color: #9ca3af;
-      margin-top: 5px;
-      font-size: 13px;
-    }
-
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-    }
-
-    .status-dot {
-      width: 9px;
-      height: 9px;
-      background: #22c55e;
-      border-radius: 50%;
-    }
-
-    .container {
-      max-width: 1450px;
-      margin: auto;
-      padding: 28px;
-    }
-
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 25px;
-      gap: 15px;
-    }
-
-    .topbar h2 {
-      font-size: 22px;
-    }
-
-    .topbar p {
-      color: #6b7280;
-      margin-top: 5px;
-      font-size: 14px;
-    }
-
-    button {
-      border: none;
-      border-radius: 8px;
-      padding: 11px 17px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .primary {
-      background: #2563eb;
-      color: white;
-    }
-
-    .secondary {
-      background: white;
-      color: #374151;
-      border: 1px solid #d1d5db;
-    }
-
-    .actions {
-      display: flex;
-      gap: 10px;
-    }
-
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      margin-bottom: 25px;
-    }
-
-    .stat {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 12px;
-      padding: 20px;
-    }
-
-    .stat-label {
-      color: #6b7280;
-      font-size: 13px;
-      margin-bottom: 8px;
-    }
-
-    .stat-number {
-      font-size: 28px;
-      font-weight: 700;
-    }
-
-    .panel {
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-
-    .panel-header {
-      padding: 18px 20px;
-      border-bottom: 1px solid #e5e7eb;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .panel-header h3 {
-      font-size: 17px;
-    }
-
-    .connection-message {
-      font-size: 13px;
-      color: #6b7280;
-    }
-
-    .task-list {
-      padding: 15px;
-    }
-
-    .task-card {
-      border: 1px solid #e5e7eb;
-      border-radius: 10px;
-      margin-bottom: 12px;
-      padding: 18px;
-      display: grid;
-      grid-template-columns: 1.4fr 1.6fr 1fr 1fr;
-      gap: 20px;
-      align-items: center;
-    }
-
-    .task-card:hover {
-      border-color: #9ca3af;
-    }
-
-    .task-title {
-      font-size: 16px;
-      font-weight: 700;
-      margin-bottom: 6px;
-    }
-
-    .small {
-      color: #6b7280;
-      font-size: 13px;
-      line-height: 1.6;
-    }
-
-    .route {
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 5px;
-    }
-
-    .arrow {
-      color: #9ca3af;
-      margin: 0 5px;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 5px 9px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .assigned {
-      background: #dbeafe;
-      color: #1d4ed8;
-    }
-
-    .pending {
-      background: #fef3c7;
-      color: #92400e;
-    }
-
-    .completed {
-      background: #dcfce7;
-      color: #166534;
-    }
-
-    .in-progress {
-      background: #ede9fe;
-      color: #6d28d9;
-    }
-
-    .high {
-      color: #dc2626;
-      font-weight: 700;
-    }
-
-    .empty {
-      padding: 50px;
-      text-align: center;
-      color: #6b7280;
-    }
-
-    .error {
-      margin: 15px;
-      padding: 15px;
-      background: #fee2e2;
-      color: #991b1b;
-      border-radius: 8px;
-    }
-
-    @media (max-width: 900px) {
-      .stats {
-        grid-template-columns: repeat(2, 1fr);
-      }
-
-      .task-card {
-        grid-template-columns: 1fr;
-      }
-
-      .topbar {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dispatch Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0} body{font-family:Arial,sans-serif;background:#f4f6f8;color:#17202a}
+header{background:#111827;color:#fff;padding:22px 32px;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:24px} header p{color:#9ca3af;margin-top:5px;font-size:13px}
+.status{display:flex;align-items:center;gap:8px;font-size:13px}.status-dot{width:9px;height:9px;background:#22c55e;border-radius:50%}
+.container{max-width:1450px;margin:auto;padding:28px}.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;gap:15px}
+.topbar h2{font-size:22px}.topbar p,.small{color:#6b7280;font-size:13px}.topbar p{margin-top:5px;font-size:14px}
+button{border:0;border-radius:8px;padding:11px 17px;font-weight:600;cursor:pointer}.primary{background:#2563eb;color:#fff}.secondary{background:#fff;color:#374151;border:1px solid #d1d5db}
+.actions{display:flex;gap:10px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:25px}
+.stat,.panel{background:#fff;border:1px solid #e5e7eb;border-radius:12px}.stat{padding:20px}.stat-label{color:#6b7280;font-size:13px;margin-bottom:8px}.stat-number{font-size:28px;font-weight:700}
+.panel{overflow:hidden}.panel-header{padding:18px 20px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between}.task-list{padding:15px}
+.task-card{border:1px solid #e5e7eb;border-radius:10px;margin-bottom:12px;padding:18px;display:grid;grid-template-columns:1.4fr 1.6fr 1fr 1fr;gap:20px;align-items:center}
+.task-title{font-size:16px;font-weight:700;margin-bottom:6px}.small{line-height:1.6}.route{font-size:14px;font-weight:600;margin-bottom:5px}.arrow{color:#9ca3af;margin:0 5px}
+.badge{display:inline-block;padding:5px 9px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.assigned{background:#dbeafe;color:#1d4ed8}.pending{background:#fef3c7;color:#92400e}.completed{background:#dcfce7;color:#166534}.in-progress{background:#ede9fe;color:#6d28d9}.high{color:#dc2626;font-weight:700}
+.empty{padding:50px;text-align:center;color:#6b7280}.error{margin:15px;padding:15px;background:#fee2e2;color:#991b1b;border-radius:8px}
+.modal{display:none;position:fixed;inset:0;background:rgba(17,24,39,.6);z-index:20;padding:24px;overflow:auto}.modal.show{display:flex;align-items:flex-start;justify-content:center}
+.modal-card{background:#fff;width:min(850px,100%);margin:30px auto;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden}
+.modal-head{padding:20px 24px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center}.modal-head h3{font-size:20px}.close{background:transparent;font-size:24px;padding:4px 8px}
+form{padding:24px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.field.full{grid-column:1/-1}label{display:block;font-size:13px;font-weight:700;margin-bottom:7px}
+input,select,textarea{width:100%;padding:11px 12px;border:1px solid #d1d5db;border-radius:8px;font:inherit;background:#fff}textarea{min-height:95px;resize:vertical}
+.form-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}.form-message{margin-top:14px;font-size:13px}.success{color:#166534}.failure{color:#991b1b}
+@media(max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.task-card,.grid{grid-template-columns:1fr}.field.full{grid-column:auto}.topbar{flex-direction:column;align-items:flex-start}}
+</style>
 </head>
-
 <body>
-
-<header>
-  <div>
-    <h1>Dispatch Dashboard</h1>
-    <p>Driver & Route Management</p>
-  </div>
-
-  <div class="status">
-    <span class="status-dot"></span>
-    <span id="connectionStatus">Connecting...</span>
-  </div>
-</header>
-
+<header><div><h1>Dispatch Dashboard</h1><p>Driver & Route Management</p></div><div class="status"><span class="status-dot"></span><span id="connectionStatus">Connecting...</span></div></header>
 <div class="container">
+<div class="topbar"><div><h2>Dispatch Board</h2><p>Manage routes, drivers and daily assignments.</p></div><div class="actions"><button class="secondary" onclick="loadTasks()">Refresh</button><button class="primary" onclick="openCreateRoute()">+ Create Route</button></div></div>
+<div class="stats">
+<div class="stat"><div class="stat-label">Total Routes</div><div class="stat-number" id="totalCount">0</div></div>
+<div class="stat"><div class="stat-label">Assigned</div><div class="stat-number" id="assignedCount">0</div></div>
+<div class="stat"><div class="stat-label">In Progress</div><div class="stat-number" id="progressCount">0</div></div>
+<div class="stat"><div class="stat-label">Completed</div><div class="stat-number" id="completedCount">0</div></div>
+</div>
+<div class="panel"><div class="panel-header"><h3>Routes & Assignments</h3><span class="small" id="lastUpdated"></span></div><div id="taskList" class="task-list"><div class="empty">Loading dispatch tasks...</div></div></div>
+</div>
 
-  <div class="topbar">
-    <div>
-      <h2>Dispatch Board</h2>
-      <p>Manage routes, drivers and daily assignments.</p>
-    </div>
-
-    <div class="actions">
-      <button class="secondary" onclick="loadTasks()">Refresh</button>
-      <button class="primary" onclick="alert('Create Route is coming next.')">
-        + Create Route
-      </button>
-    </div>
-  </div>
-
-  <div class="stats">
-
-    <div class="stat">
-      <div class="stat-label">Total Routes</div>
-      <div class="stat-number" id="totalCount">0</div>
-    </div>
-
-    <div class="stat">
-      <div class="stat-label">Assigned</div>
-      <div class="stat-number" id="assignedCount">0</div>
-    </div>
-
-    <div class="stat">
-      <div class="stat-label">In Progress</div>
-      <div class="stat-number" id="progressCount">0</div>
-    </div>
-
-    <div class="stat">
-      <div class="stat-label">Completed</div>
-      <div class="stat-number" id="completedCount">0</div>
-    </div>
-
-  </div>
-
-  <div class="panel">
-
-    <div class="panel-header">
-      <h3>Routes & Assignments</h3>
-      <span class="connection-message" id="lastUpdated"></span>
-    </div>
-
-    <div id="taskList" class="task-list">
-      <div class="empty">Loading dispatch tasks...</div>
-    </div>
-
-  </div>
-
+<div class="modal" id="routeModal">
+<div class="modal-card">
+<div class="modal-head"><div><h3>Create Route</h3><p class="small">Create and assign a new driver task.</p></div><button class="close" type="button" onclick="closeCreateRoute()">×</button></div>
+<form id="routeForm">
+<div class="grid">
+<div class="field"><label>Route Title *</label><input id="title" required placeholder="Example: McCook - Hillside"></div>
+<div class="field"><label>Task Type *</label><select id="task_type" required><option value="shuttle">Shuttle</option><option value="pickup">Pickup</option><option value="delivery">Delivery</option><option value="other">Other</option></select></div>
+<div class="field"><label>Pickup Name *</label><input id="pickup_name" required placeholder="Darwill McCook"></div>
+<div class="field"><label>Pickup Address</label><input id="pickup_address" placeholder="Address"></div>
+<div class="field"><label>Delivery Name *</label><input id="delivery_name" required placeholder="Darwill Hillside"></div>
+<div class="field"><label>Delivery Address</label><input id="delivery_address" placeholder="Address"></div>
+<div class="field"><label>Scheduled Date & Time</label><input id="scheduled_at" type="datetime-local"></div>
+<div class="field"><label>Priority</label><select id="priority"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
+<div class="field"><label>Client / Job</label><input id="job_client"></div>
+<div class="field"><label>Material</label><input id="material"></div>
+<div class="field"><label>Pallet Quantity</label><input id="pallet_qty" type="number" min="0"></div>
+<div class="field"><label>Assign Driver</label><select id="assigned_driver_id"><option value="">Loading drivers...</option></select></div>
+<div class="field full"><label>Special Instructions</label><textarea id="instructions"></textarea></div>
+</div>
+<div id="formMessage" class="form-message"></div>
+<div class="form-actions"><button type="button" class="secondary" onclick="closeCreateRoute()">Cancel</button><button type="submit" class="primary" id="saveButton">Create Route</button></div>
+</form>
+</div>
 </div>
 
 <script>
-
-  // Paste the SAME values you saved in Notepad here.
-  // ONLY use the publishable key. Never use a secret/service-role key.
-
-  const SUPABASE_URL = "https://hqhfstosclasgwgxubip.supabase.co";
-  const SUPABASE_KEY = "sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk";
-
-  const db = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_KEY
-  );
-
-  function safe(value) {
-    if (
-      value === null ||
-      value === undefined ||
-      value === ""
-    ) {
-      return "—";
-    }
-
-    return value;
-  }
-
-  function formatDate(value) {
-
-    if (!value) return "Not scheduled";
-
-    const date = new Date(value);
-
-    return date.toLocaleString([], {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit"
-    });
-  }
-
-  function statusClass(status) {
-
-    const value = (status || "").toLowerCase();
-
-    if (value === "completed") return "completed";
-
-    if (
-      value === "in progress" ||
-      value === "in_progress"
-    ) {
-      return "in-progress";
-    }
-
-    if (value === "assigned") return "assigned";
-
-    return "pending";
-  }
-
-  async function loadTasks() {
-
-    const taskList =
-      document.getElementById("taskList");
-
-    const connection =
-      document.getElementById("connectionStatus");
-
-    taskList.innerHTML =
-      '<div class="empty">Loading dispatch tasks...</div>';
-
-    connection.textContent = "Connecting...";
-
-    const { data, error } = await db
-      .from("dispatch_tasks")
-      .select("*")
-      .order("scheduled_at", {
-        ascending: true,
-        nullsFirst: false
-      });
-
-    if (error) {
-
-      connection.textContent =
-        "Connection Error";
-
-      taskList.innerHTML =
-        '<div class="error">' +
-        safe(error.message) +
-        '</div>';
-
-      return;
-    }
-
-    connection.textContent = "Supabase Connected";
-
-    document.getElementById("lastUpdated")
-      .textContent =
-      "Updated " + new Date().toLocaleTimeString();
-
-    updateStats(data);
-
-    renderTasks(data);
-  }
-
-  function updateStats(tasks) {
-
-    document.getElementById("totalCount")
-      .textContent = tasks.length;
-
-    document.getElementById("assignedCount")
-      .textContent =
-      tasks.filter(task =>
-        (task.status || "").toLowerCase()
-          === "assigned"
-      ).length;
-
-    document.getElementById("progressCount")
-      .textContent =
-      tasks.filter(task => {
-
-        const status =
-          (task.status || "").toLowerCase();
-
-        return (
-          status === "in progress" ||
-          status === "in_progress"
-        );
-
-      }).length;
-
-    document.getElementById("completedCount")
-      .textContent =
-      tasks.filter(task =>
-        (task.status || "").toLowerCase()
-          === "completed"
-      ).length;
-  }
-
-  function renderTasks(tasks) {
-
-    const taskList =
-      document.getElementById("taskList");
-
-    if (!tasks || tasks.length === 0) {
-
-      taskList.innerHTML =
-        '<div class="empty">No routes found.</div>';
-
-      return;
-    }
-
-    taskList.innerHTML = tasks.map(task => {
-
-      const priority =
-        (task.priority || "normal").toLowerCase();
-
-      return `
-        <div class="task-card">
-
-          <div>
-
-            <div class="task-title">
-              ${safe(task.title)}
-            </div>
-
-            <div class="small">
-              ${safe(task.task_type)}
-            </div>
-
-            <div style="margin-top:8px;">
-              <span class="badge ${statusClass(task.status)}">
-                ${safe(task.status)}
-              </span>
-            </div>
-
-          </div>
-
-          <div>
-
-            <div class="route">
-              ${safe(task.pickup_name)}
-              <span class="arrow">→</span>
-              ${safe(task.delivery_name)}
-            </div>
-
-            <div class="small">
-              Pickup: ${safe(task.pickup_address)}
-            </div>
-
-            <div class="small">
-              Delivery: ${safe(task.delivery_address)}
-            </div>
-
-          </div>
-
-          <div>
-
-            <div class="small">
-              <strong>Scheduled</strong><br>
-              ${formatDate(task.scheduled_at)}
-            </div>
-
-            <div class="small" style="margin-top:7px;">
-              <strong>Driver ID</strong><br>
-              ${safe(task.assigned_driver_id)}
-            </div>
-
-          </div>
-
-          <div>
-
-            <div class="small">
-              <strong>Client / Job</strong><br>
-              ${safe(task.job_client)}
-            </div>
-
-            <div class="small" style="margin-top:7px;">
-              <strong>Material</strong><br>
-              ${safe(task.material)}
-            </div>
-
-            <div class="small" style="margin-top:7px;">
-              <strong>Pallets:</strong>
-              ${safe(task.pallet_qty)}
-            </div>
-
-            <div class="small" style="margin-top:7px;">
-              Priority:
-              <span class="${priority === "high" ? "high" : ""}">
-                ${safe(task.priority)}
-              </span>
-            </div>
-
-          </div>
-
-        </div>
-      `;
-
-    }).join("");
-  }
-
-  loadTasks();
-
+const SUPABASE_URL="https://hqhfstosclasgwgxubip.supabase.co";
+const SUPABASE_KEY="sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk";
+const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const safe=v=>(v===null||v===undefined||v==="")?"—":v;
+function formatDate(v){if(!v)return"Not scheduled";return new Date(v).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});}
+function statusClass(s){s=(s||"").toLowerCase();if(s==="completed")return"completed";if(s==="in progress"||s==="in_progress")return"in-progress";if(s==="assigned")return"assigned";return"pending";}
+async function loadTasks(){
+ const list=document.getElementById("taskList"),conn=document.getElementById("connectionStatus");
+ list.innerHTML='<div class="empty">Loading dispatch tasks...</div>';conn.textContent="Connecting...";
+ const {data,error}=await db.from("dispatch_tasks").select("*").order("scheduled_at",{ascending:true,nullsFirst:false});
+ if(error){conn.textContent="Connection Error";list.innerHTML='<div class="error">'+safe(error.message)+'</div>';return;}
+ conn.textContent="Supabase Connected";document.getElementById("lastUpdated").textContent="Updated "+new Date().toLocaleTimeString();updateStats(data);renderTasks(data);
+}
+function updateStats(t){
+ totalCount.textContent=t.length;assignedCount.textContent=t.filter(x=>(x.status||"").toLowerCase()==="assigned").length;
+ progressCount.textContent=t.filter(x=>["in progress","in_progress"].includes((x.status||"").toLowerCase())).length;
+ completedCount.textContent=t.filter(x=>(x.status||"").toLowerCase()==="completed").length;
+}
+function renderTasks(tasks){
+ const list=document.getElementById("taskList");if(!tasks?.length){list.innerHTML='<div class="empty">No routes found.</div>';return;}
+ list.innerHTML=tasks.map(t=>`<div class="task-card"><div><div class="task-title">${safe(t.title)}</div><div class="small">${safe(t.task_type)}</div><div style="margin-top:8px"><span class="badge ${statusClass(t.status)}">${safe(t.status)}</span></div></div><div><div class="route">${safe(t.pickup_name)}<span class="arrow">→</span>${safe(t.delivery_name)}</div><div class="small">Pickup: ${safe(t.pickup_address)}</div><div class="small">Delivery: ${safe(t.delivery_address)}</div></div><div><div class="small"><strong>Scheduled</strong><br>${formatDate(t.scheduled_at)}</div><div class="small" style="margin-top:7px"><strong>Driver ID</strong><br>${safe(t.assigned_driver_id)}</div></div><div><div class="small"><strong>Client / Job</strong><br>${safe(t.job_client)}</div><div class="small" style="margin-top:7px"><strong>Material</strong><br>${safe(t.material)}</div><div class="small" style="margin-top:7px"><strong>Pallets:</strong> ${safe(t.pallet_qty)}</div><div class="small" style="margin-top:7px">Priority: <span class="${(t.priority||"").toLowerCase()==="high"?"high":""}">${safe(t.priority)}</span></div></div></div>`).join("");
+}
+async function loadDrivers(){
+ const select=document.getElementById("assigned_driver_id");select.innerHTML='<option value="">Loading drivers...</option>';
+ const {data,error}=await db.from("drivers").select("*").order("id",{ascending:true});
+ if(error){select.innerHTML='<option value="">Unable to load drivers</option>';return;}
+ select.innerHTML='<option value="">Unassigned</option>'+data.map(d=>{
+   const name=d.name||d.full_name||d.driver_name||[d.first_name,d.last_name].filter(Boolean).join(" ")||("Driver "+d.id);
+   return `<option value="${d.id}">${name}</option>`;
+ }).join("");
+}
+async function openCreateRoute(){document.getElementById("routeModal").classList.add("show");document.getElementById("formMessage").textContent="";await loadDrivers();}
+function closeCreateRoute(){document.getElementById("routeModal").classList.remove("show");}
+document.getElementById("routeModal").addEventListener("click",e=>{if(e.target.id==="routeModal")closeCreateRoute();});
+document.getElementById("routeForm").addEventListener("submit",async e=>{
+ e.preventDefault();const msg=document.getElementById("formMessage"),btn=document.getElementById("saveButton");btn.disabled=true;btn.textContent="Creating...";msg.textContent="";
+ const driver=document.getElementById("assigned_driver_id").value;
+ const scheduled=document.getElementById("scheduled_at").value;
+ const payload={
+  title:document.getElementById("title").value.trim(),task_type:document.getElementById("task_type").value,status:driver?"assigned":"pending",priority:document.getElementById("priority").value,
+  scheduled_at:scheduled?new Date(scheduled).toISOString():null,pickup_name:document.getElementById("pickup_name").value.trim(),pickup_address:document.getElementById("pickup_address").value.trim()||null,
+  delivery_name:document.getElementById("delivery_name").value.trim(),delivery_address:document.getElementById("delivery_address").value.trim()||null,job_client:document.getElementById("job_client").value.trim()||null,
+  material:document.getElementById("material").value.trim()||null,pallet_qty:document.getElementById("pallet_qty").value?Number(document.getElementById("pallet_qty").value):null,
+  instructions:document.getElementById("instructions").value.trim()||null,assigned_driver_id:driver?Number(driver):null
+ };
+ const {error}=await db.from("dispatch_tasks").insert(payload);
+ btn.disabled=false;btn.textContent="Create Route";
+ if(error){msg.className="form-message failure";msg.textContent="Could not create route: "+error.message;return;}
+ msg.className="form-message success";msg.textContent="Route created successfully.";document.getElementById("routeForm").reset();await loadTasks();setTimeout(closeCreateRoute,650);
+});
+loadTasks();
 </script>
-
 </body>
 </html>
