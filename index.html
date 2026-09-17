@@ -43,7 +43,7 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid #d1d5db;bord
 </style>
 </head>
 <body>
-<header><div><h1>Dispatch Dashboard</h1><p>Driver & Route Management · Build 1.6.1</p></div><div class="status"><span class="status-dot"></span><span id="connectionStatus">Connecting...</span></div></header>
+<header><div><h1>Dispatch Dashboard</h1><p>Driver & Route Management · Build 1.6.2</p></div><div class="status"><span class="status-dot"></span><span id="connectionStatus">Connecting...</span></div></header>
 <div class="container">
 <div class="topbar"><div><h2>Dispatch Board</h2><p>Manage routes, drivers and daily assignments.</p></div><div class="actions"><button class="secondary" onclick="loadTasks()">Refresh</button><button class="primary" onclick="openCreateRoute()">+ Create Route</button></div></div>
 <div class="stats">
@@ -213,9 +213,11 @@ function routeMini(t){
 }
 function renderTasks(tasks){
  const board=document.getElementById("taskList");
- const ids=Object.keys(driverNames).sort((a,b)=>Number(a)-Number(b));
- let html=driverCard(null,"Unassigned Routes",tasks,true);
- html+=ids.map(id=>driverCard(id,driverNames[id],tasks,false)).join("");
+ const ids=Object.keys(driverNames).filter(id=>Number(id)>0).sort((a,b)=>Number(a)-Number(b));
+ const unassigned=tasks.filter(t=>!t.assigned_driver_id);
+ let html=unassigned.length?driverCard(null,"Unassigned Routes",tasks,true):"";
+ html+=ids.filter(id=>tasks.some(t=>Number(t.assigned_driver_id)===Number(id))).map(id=>driverCard(id,driverNames[id],tasks,false)).join("");
+ if(!html)html='<div class="empty" style="grid-column:1/-1">No active routes assigned. Create a route to start the dispatch board.</div>';
  board.innerHTML=html;setupDrag();
 }
 function setupDrag(){

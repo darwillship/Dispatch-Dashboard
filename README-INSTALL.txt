@@ -1,10 +1,10 @@
-DISPATCH DASHBOARD v1.6.1
+DISPATCH DASHBOARD v1.6.2 — ACTIVE DRIVER CARDS
 
-Added messenger/contractor assignment options:
-- Sergi
-- Washington
-- Quick Delivery
-
-These appear alongside the existing driver roster on the Driver Dispatch Board and in the Create/Edit Route assignment dropdown.
-
-If they do not yet exist in the Supabase drivers table, they will display as "needs Supabase record" until database records are added. This prevents invalid assignment IDs.
+CHANGE
+- Driver cards only appear when that driver has at least one route.
+- Drivers with no assigned routes are hidden from the main board.
+- Unassigned Routes only appears when unassigned routes actually exist.
+- All drivers and messengers remain available in Create Route / Edit Route.
+- Multiple routes assigned to the same driver stay grouped in that driver's card.
+- Completed routes remain visible and green for now.
+- Existing Edit, Delete, Status, drag/reassign, locations, and vehicle UI remain.
