@@ -4,35 +4,570 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dispatch Dashboard</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      color: #17202a;
+    }
+
+    header {
+      background: #111827;
+      color: white;
+      padding: 22px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    header h1 {
+      font-size: 24px;
+    }
+
+    header p {
+      color: #9ca3af;
+      margin-top: 5px;
+      font-size: 13px;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      background: #22c55e;
+      border-radius: 50%;
+    }
+
+    .container {
+      max-width: 1450px;
+      margin: auto;
+      padding: 28px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 25px;
+      gap: 15px;
+    }
+
+    .topbar h2 {
+      font-size: 22px;
+    }
+
+    .topbar p {
+      color: #6b7280;
+      margin-top: 5px;
+      font-size: 14px;
+    }
+
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 11px 17px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: #2563eb;
+      color: white;
+    }
+
+    .secondary {
+      background: white;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 25px;
+    }
+
+    .stat {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .stat-label {
+      color: #6b7280;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .stat-number {
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .panel {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 18px 20px;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-header h3 {
+      font-size: 17px;
+    }
+
+    .connection-message {
+      font-size: 13px;
+      color: #6b7280;
+    }
+
+    .task-list {
+      padding: 15px;
+    }
+
+    .task-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      padding: 18px;
+      display: grid;
+      grid-template-columns: 1.4fr 1.6fr 1fr 1fr;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .task-card:hover {
+      border-color: #9ca3af;
+    }
+
+    .task-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .small {
+      color: #6b7280;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .route {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+
+    .arrow {
+      color: #9ca3af;
+      margin: 0 5px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 5px 9px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .assigned {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+
+    .pending {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .completed {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .in-progress {
+      background: #ede9fe;
+      color: #6d28d9;
+    }
+
+    .high {
+      color: #dc2626;
+      font-weight: 700;
+    }
+
+    .empty {
+      padding: 50px;
+      text-align: center;
+      color: #6b7280;
+    }
+
+    .error {
+      margin: 15px;
+      padding: 15px;
+      background: #fee2e2;
+      color: #991b1b;
+      border-radius: 8px;
+    }
+
+    @media (max-width: 900px) {
+      .stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .task-card {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
 </head>
 
 <body>
-  <h1>Dispatch Dashboard</h1>
-  <p>Connecting to Supabase...</p>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script> <script> const SUPABASE_URL = "https://hqhfstosclasgwgxubip.supabase.co"
-const SUPABASE_KEY = "sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk"
 
- const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+<header>
+  <div>
+    <h1>Dispatch Dashboard</h1>
+    <p>Driver & Route Management</p>
+  </div>
 
-async function loadTasks() {
-  const { data, error } = await db
-    .from("dispatch_tasks")
-    .select("*");
+  <div class="status">
+    <span class="status-dot"></span>
+    <span id="connectionStatus">Connecting...</span>
+  </div>
+</header>
 
-  if (error) {
-    document.querySelector("p").textContent =
-      "Connection error: " + error.message;
-    return;
+<div class="container">
+
+  <div class="topbar">
+    <div>
+      <h2>Dispatch Board</h2>
+      <p>Manage routes, drivers and daily assignments.</p>
+    </div>
+
+    <div class="actions">
+      <button class="secondary" onclick="loadTasks()">Refresh</button>
+      <button class="primary" onclick="alert('Create Route is coming next.')">
+        + Create Route
+      </button>
+    </div>
+  </div>
+
+  <div class="stats">
+
+    <div class="stat">
+      <div class="stat-label">Total Routes</div>
+      <div class="stat-number" id="totalCount">0</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Assigned</div>
+      <div class="stat-number" id="assignedCount">0</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">In Progress</div>
+      <div class="stat-number" id="progressCount">0</div>
+    </div>
+
+    <div class="stat">
+      <div class="stat-label">Completed</div>
+      <div class="stat-number" id="completedCount">0</div>
+    </div>
+
+  </div>
+
+  <div class="panel">
+
+    <div class="panel-header">
+      <h3>Routes & Assignments</h3>
+      <span class="connection-message" id="lastUpdated"></span>
+    </div>
+
+    <div id="taskList" class="task-list">
+      <div class="empty">Loading dispatch tasks...</div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+
+  // Paste the SAME values you saved in Notepad here.
+  // ONLY use the publishable key. Never use a secret/service-role key.
+
+  const SUPABASE_URL = "https://hqhfstosclasgwgxubip.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk";
+
+  const db = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
+  );
+
+  function safe(value) {
+    if (
+      value === null ||
+      value === undefined ||
+      value === ""
+    ) {
+      return "—";
+    }
+
+    return value;
   }
 
-  document.querySelector("p").textContent =
-    "Connected to Supabase — " + data.length + " task(s) found.";
+  function formatDate(value) {
 
-  console.log("Dispatch Tasks:", data);
-}
+    if (!value) return "Not scheduled";
 
-loadTasks();
-   
+    const date = new Date(value);
+
+    return date.toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    });
+  }
+
+  function statusClass(status) {
+
+    const value = (status || "").toLowerCase();
+
+    if (value === "completed") return "completed";
+
+    if (
+      value === "in progress" ||
+      value === "in_progress"
+    ) {
+      return "in-progress";
+    }
+
+    if (value === "assigned") return "assigned";
+
+    return "pending";
+  }
+
+  async function loadTasks() {
+
+    const taskList =
+      document.getElementById("taskList");
+
+    const connection =
+      document.getElementById("connectionStatus");
+
+    taskList.innerHTML =
+      '<div class="empty">Loading dispatch tasks...</div>';
+
+    connection.textContent = "Connecting...";
+
+    const { data, error } = await db
+      .from("dispatch_tasks")
+      .select("*")
+      .order("scheduled_at", {
+        ascending: true,
+        nullsFirst: false
+      });
+
+    if (error) {
+
+      connection.textContent =
+        "Connection Error";
+
+      taskList.innerHTML =
+        '<div class="error">' +
+        safe(error.message) +
+        '</div>';
+
+      return;
+    }
+
+    connection.textContent = "Supabase Connected";
+
+    document.getElementById("lastUpdated")
+      .textContent =
+      "Updated " + new Date().toLocaleTimeString();
+
+    updateStats(data);
+
+    renderTasks(data);
+  }
+
+  function updateStats(tasks) {
+
+    document.getElementById("totalCount")
+      .textContent = tasks.length;
+
+    document.getElementById("assignedCount")
+      .textContent =
+      tasks.filter(task =>
+        (task.status || "").toLowerCase()
+          === "assigned"
+      ).length;
+
+    document.getElementById("progressCount")
+      .textContent =
+      tasks.filter(task => {
+
+        const status =
+          (task.status || "").toLowerCase();
+
+        return (
+          status === "in progress" ||
+          status === "in_progress"
+        );
+
+      }).length;
+
+    document.getElementById("completedCount")
+      .textContent =
+      tasks.filter(task =>
+        (task.status || "").toLowerCase()
+          === "completed"
+      ).length;
+  }
+
+  function renderTasks(tasks) {
+
+    const taskList =
+      document.getElementById("taskList");
+
+    if (!tasks || tasks.length === 0) {
+
+      taskList.innerHTML =
+        '<div class="empty">No routes found.</div>';
+
+      return;
+    }
+
+    taskList.innerHTML = tasks.map(task => {
+
+      const priority =
+        (task.priority || "normal").toLowerCase();
+
+      return `
+        <div class="task-card">
+
+          <div>
+
+            <div class="task-title">
+              ${safe(task.title)}
+            </div>
+
+            <div class="small">
+              ${safe(task.task_type)}
+            </div>
+
+            <div style="margin-top:8px;">
+              <span class="badge ${statusClass(task.status)}">
+                ${safe(task.status)}
+              </span>
+            </div>
+
+          </div>
+
+          <div>
+
+            <div class="route">
+              ${safe(task.pickup_name)}
+              <span class="arrow">→</span>
+              ${safe(task.delivery_name)}
+            </div>
+
+            <div class="small">
+              Pickup: ${safe(task.pickup_address)}
+            </div>
+
+            <div class="small">
+              Delivery: ${safe(task.delivery_address)}
+            </div>
+
+          </div>
+
+          <div>
+
+            <div class="small">
+              <strong>Scheduled</strong><br>
+              ${formatDate(task.scheduled_at)}
+            </div>
+
+            <div class="small" style="margin-top:7px;">
+              <strong>Driver ID</strong><br>
+              ${safe(task.assigned_driver_id)}
+            </div>
+
+          </div>
+
+          <div>
+
+            <div class="small">
+              <strong>Client / Job</strong><br>
+              ${safe(task.job_client)}
+            </div>
+
+            <div class="small" style="margin-top:7px;">
+              <strong>Material</strong><br>
+              ${safe(task.material)}
+            </div>
+
+            <div class="small" style="margin-top:7px;">
+              <strong>Pallets:</strong>
+              ${safe(task.pallet_qty)}
+            </div>
+
+            <div class="small" style="margin-top:7px;">
+              Priority:
+              <span class="${priority === "high" ? "high" : ""}">
+                ${safe(task.priority)}
+              </span>
+            </div>
+
+          </div>
+
+        </div>
+      `;
+
+    }).join("");
+  }
+
+  loadTasks();
+
 </script>
+
 </body>
 </html>
