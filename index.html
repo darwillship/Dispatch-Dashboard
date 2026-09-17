@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dispatch Dashboard</title>
+</head>
+
+<body>
+  <h1>Dispatch Dashboard</h1>
+  <p>Connecting to Supabase...</p>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script> <script> const SUPABASE_URL = https://hqhfstosclasgwgxubip.supabase.co
+const SUPABASE_KEY = sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk
+
+ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+async function loadTasks() {
+  const { data, error } = await db
+    .from("dispatch_tasks")
+    .select("*");
+
+  if (error) {
+    document.querySelector("p").textContent =
+      "Connection error: " + error.message;
+    return;
+  }
+
+  document.querySelector("p").textContent =
+    "Connected to Supabase — " + data.length + " task(s) found.";
+
+  console.log("Dispatch Tasks:", data);
+}
+
+loadTasks();
+   
+</script>
+</body>
+</html>
