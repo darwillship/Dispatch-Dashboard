@@ -40,10 +40,10 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid #d1d5db;bord
 .card-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.mini{padding:7px 10px;font-size:11px;border:1px solid #d1d5db;background:#fff}.danger{color:#b91c1c;border-color:#fecaca;background:#fff}
 .drag-handle{position:absolute;top:10px;right:10px;color:#9ca3af;font-size:18px;cursor:grab;user-select:none}.status-select{margin-top:8px;padding:7px 8px;font-size:12px}
 @media(max-width:900px){.stats{grid-template-columns:repeat(2,1fr)}.task-card,.grid{grid-template-columns:1fr}.field.full{grid-column:auto}.topbar{flex-direction:column;align-items:flex-start}}
-</style>
+.activity-live{margin-top:9px;padding:9px 10px;border-radius:9px;background:#eef2ff;font-size:12px;font-weight:700;color:#3730a3}.activity-live .activity-time{font-weight:500;color:#6b7280;margin-left:5px}.activity-none{color:#9ca3af;background:#f9fafb}</style>
 </head>
 <body>
-<header><div><h1>Dispatch Dashboard</h1><p>Driver & Route Management · Build 1.7.0</p></div><div class="status"><span class="status-dot"></span><span id="connectionStatus">Connecting...</span></div></header>
+<header><div><h1>Dispatch Dashboard</h1><p>Driver & Route Management · Build 1.8.0</p></div><div class="status"><span class="status-dot"></span><span id="connectionStatus">Connecting...</span></div></header>
 <div class="container">
 <div class="topbar"><div><h2>Dispatch Board</h2><p>Manage routes, drivers and daily assignments.</p></div><div class="actions"><button class="secondary" onclick="loadTasks()">Refresh</button><button class="btn" onclick="openHistory()">Route History</button><button class="primary" onclick="openCreateRoute()">+ Create Route</button></div></div>
 <div class="stats">
@@ -197,6 +197,7 @@ async function loadTasks(){
  if(error){conn.textContent="Connection Error";list.innerHTML='<div class="error">'+safe(error.message)+'</div>';return;}
  conn.textContent="Supabase Connected";
  currentTasks=applySavedOrder((data||[]).filter(isTodayTask));
+ await loadLiveActivities();
  document.getElementById("lastUpdated").textContent="Updated "+new Date().toLocaleTimeString();
  updateStats(currentTasks);renderTasks(currentTasks);
 }
@@ -211,10 +212,25 @@ function statusOptions(current){
  const norm=(current||"pending").toLowerCase().replace(" ","_");
  return opts.map(([v,l])=>`<option value="${v}" ${v===norm?"selected":""}>${l}</option>`).join("");
 }
+async function loadLiveActivities(){
+ liveActivities={};
+ try{
+  const {data,error}=await db.from("task_activity").select("*").eq("active",true).order("started_at",{ascending:false});
+  if(error)throw error;
+  (data||[]).forEach(a=>{if(a.driver_id&&!liveActivities[a.driver_id])liveActivities[a.driver_id]=a;});
+ }catch(e){console.warn("Live driver activity unavailable",e);}
+}
+function liveActivityHtml(driverId){
+ const a=liveActivities[driverId];
+ if(!a)return '<div class="activity-live activity-none">Current Activity: No activity reported</div>';
+ const started=a.started_at?new Date(a.started_at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"";
+ return `<div class="activity-live">Current Activity: ${safe(a.activity_type)}${a.location?" · "+safe(a.location):""}<span class="activity-time">${started?"since "+started:""}</span></div>`;
+}
 function driverCard(id,name,tasks,isUnassigned=false){
  const routes=tasks.filter(t=>isUnassigned?!t.assigned_driver_id:Number(t.assigned_driver_id)===Number(id));
  return `<div class="driver-card ${isUnassigned?"unassigned-card":""}" data-driver="${isUnassigned?"":id}">
  <div class="driver-head"><div class="driver-name">${name}</div><div class="driver-count">${routes.length} route${routes.length===1?"":"s"}</div></div>
+ ${isUnassigned?"":liveActivityHtml(id)}
  <div class="driver-routes" data-driver="${isUnassigned?"":id}">
  ${routes.length?routes.map(t=>routeMini(t)).join(""):'<div class="driver-empty">No routes assigned</div>'}
  </div></div>`;
@@ -338,6 +354,7 @@ document.getElementById("routeForm").addEventListener("submit",async e=>{
  msg.className="form-message success";msg.textContent=editing?"Route updated successfully.":"Route created successfully.";await loadTasks();setTimeout(closeCreateRoute,500);
 });
 populateLocations();loadTasks();
+setInterval(()=>{if(!document.getElementById("routeModal").classList.contains("show")&&!document.getElementById("historyModal").classList.contains("show"))loadTasks();},20000);
 </script>
 </body>
 </html>
