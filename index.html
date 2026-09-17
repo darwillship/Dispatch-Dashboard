@@ -15,7 +15,7 @@ header h1{font-size:24px} header p{color:#9ca3af;margin-top:5px;font-size:13px}
 button{border:0;border-radius:8px;padding:11px 17px;font-weight:600;cursor:pointer}.primary{background:#2563eb;color:#fff}.secondary{background:#fff;color:#374151;border:1px solid #d1d5db}
 .actions{display:flex;gap:10px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:25px}
 .stat,.panel{background:#fff;border:1px solid #e5e7eb;border-radius:12px}.stat{padding:20px}.stat-label{color:#6b7280;font-size:13px;margin-bottom:8px}.stat-number{font-size:28px;font-weight:700}
-.panel{overflow:hidden}.panel-header{padding:18px 20px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between}.task-list{padding:15px}
+.panel{overflow:hidden}.panel-header{padding:18px 20px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between}.task-list{padding:15px}.driver-board{padding:15px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.driver-card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;min-height:150px}.driver-head{padding:14px 16px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center}.driver-name{font-weight:700}.driver-count{font-size:11px;color:#6b7280;background:#f3f4f6;border-radius:20px;padding:5px 8px}.driver-routes{padding:10px;min-height:90px}.driver-empty{padding:22px 10px;text-align:center;color:#9ca3af;font-size:12px}.route-mini{background:#fff;border:1px solid #e5e7eb;border-radius:9px;padding:13px;margin-bottom:9px;position:relative;cursor:grab}.route-mini.dragging{opacity:.4}.route-mini.drag-over{outline:2px solid #2563eb}.route-mini-title{font-weight:700;font-size:13px;padding-right:24px}.route-mini-meta{font-size:11px;color:#6b7280;line-height:1.6;margin-top:6px}.unassigned-card{grid-column:1/-1;border-style:dashed;border-color:#93c5fd;background:#eff6ff}@media(max-width:900px){.driver-board{grid-template-columns:1fr}}
 .task-card{border:1px solid #e5e7eb;border-radius:10px;margin-bottom:12px;padding:18px;display:grid;grid-template-columns:1.4fr 1.6fr 1fr 1fr;gap:20px;align-items:center}
 .task-title{font-size:16px;font-weight:700;margin-bottom:6px}.small{line-height:1.6}.route{font-size:14px;font-weight:600;margin-bottom:5px}.arrow{color:#9ca3af;margin:0 5px}
 .badge{display:inline-block;padding:5px 9px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}.assigned{background:#dbeafe;color:#1d4ed8}.pending{background:#fef3c7;color:#92400e}.completed{background:#dcfce7;color:#166534}.in-progress{background:#ede9fe;color:#6d28d9}.high{color:#dc2626;font-weight:700}
@@ -34,7 +34,7 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid #d1d5db;bord
 </style>
 </head>
 <body>
-<header><div><h1>Dispatch Dashboard</h1><p>Driver & Route Management · Build 1.4.0</p></div><div class="status"><span class="status-dot"></span><span id="connectionStatus">Connecting...</span></div></header>
+<header><div><h1>Dispatch Dashboard</h1><p>Driver & Route Management · Build 1.5.0</p></div><div class="status"><span class="status-dot"></span><span id="connectionStatus">Connecting...</span></div></header>
 <div class="container">
 <div class="topbar"><div><h2>Dispatch Board</h2><p>Manage routes, drivers and daily assignments.</p></div><div class="actions"><button class="secondary" onclick="loadTasks()">Refresh</button><button class="primary" onclick="openCreateRoute()">+ Create Route</button></div></div>
 <div class="stats">
@@ -43,7 +43,7 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid #d1d5db;bord
 <div class="stat"><div class="stat-label">In Progress</div><div class="stat-number" id="progressCount">0</div></div>
 <div class="stat"><div class="stat-label">Completed</div><div class="stat-number" id="completedCount">0</div></div>
 </div>
-<div class="panel"><div class="panel-header"><h3>Routes & Assignments</h3><span class="small" id="lastUpdated"></span></div><div id="taskList" class="task-list"><div class="empty">Loading dispatch tasks...</div></div></div>
+<div class="panel"><div class="panel-header"><h3>Driver Dispatch Board</h3><span class="small" id="lastUpdated"></span></div><div id="taskList" class="driver-board"><div class="empty">Loading drivers and routes...</div></div></div>
 </div>
 
 <div class="modal" id="routeModal"><div class="modal-card">
@@ -178,32 +178,53 @@ function statusOptions(current){
  const norm=(current||"pending").toLowerCase().replace(" ","_");
  return opts.map(([v,l])=>`<option value="${v}" ${v===norm?"selected":""}>${l}</option>`).join("");
 }
-function renderTasks(tasks){
- const list=document.getElementById("taskList");
- if(!tasks.length){list.innerHTML='<div class="empty">No routes found.</div>';return;}
- list.innerHTML=tasks.map(t=>`<div class="task-card" draggable="true" data-id="${t.id}">
- <div class="drag-handle" title="Drag to reorder">⋮⋮</div>
- <div><div class="task-title">${safe(t.pickup_name)} → ${safe(t.delivery_name)}</div><div class="small">${safe(t.task_type)}</div>
+function driverCard(id,name,tasks,isUnassigned=false){
+ const routes=tasks.filter(t=>isUnassigned?!t.assigned_driver_id:Number(t.assigned_driver_id)===Number(id));
+ return `<div class="driver-card ${isUnassigned?"unassigned-card":""}" data-driver="${isUnassigned?"":id}">
+ <div class="driver-head"><div class="driver-name">${name}</div><div class="driver-count">${routes.length} route${routes.length===1?"":"s"}</div></div>
+ <div class="driver-routes" data-driver="${isUnassigned?"":id}">
+ ${routes.length?routes.map(t=>routeMini(t)).join(""):'<div class="driver-empty">No routes assigned</div>'}
+ </div></div>`;
+}
+function routeMini(t){
+ return `<div class="route-mini" draggable="true" data-id="${t.id}">
+ <div class="drag-handle" title="Drag route">⋮⋮</div>
+ <div class="route-mini-title">${safe(t.pickup_name)} → ${safe(t.delivery_name)}</div>
+ <div class="route-mini-meta">${formatDate(t.scheduled_at)} · ${safe(t.task_type)} · ${safe(t.pallet_qty)} pallets<br>${safe(t.job_client)} · Priority: ${safe(t.priority)}</div>
  <select class="status-select" onchange="changeStatus(${t.id},this.value)">${statusOptions(t.status)}</select>
- <div class="card-actions"><button class="mini" onclick="editRoute(${t.id})">Edit</button><button class="mini danger" onclick="deleteRoute(${t.id})">Delete</button></div></div>
- <div><div class="route">${safe(t.pickup_name)}<span class="arrow">→</span>${safe(t.delivery_name)}</div><div class="small">Pickup: ${safe(t.pickup_address)}</div><div class="small">Delivery: ${safe(t.delivery_address)}</div></div>
- <div><div class="small"><strong>Scheduled</strong><br>${formatDate(t.scheduled_at)}</div><div class="small" style="margin-top:7px"><strong>Driver</strong><br>${safe(driverNames[t.assigned_driver_id]||t.assigned_driver_id)}</div></div>
- <div><div class="small"><strong>Client / Job</strong><br>${safe(t.job_client)}</div><div class="small" style="margin-top:7px"><strong>Material</strong><br>${safe(t.material)}</div><div class="small" style="margin-top:7px"><strong>Pallets:</strong> ${safe(t.pallet_qty)}</div><div class="small" style="margin-top:7px">Priority: <span class="${(t.priority||"").toLowerCase()==="high"?"high":""}">${safe(t.priority)}</span></div></div>
- </div>`).join("");
- setupDrag();
+ <div class="card-actions"><button class="mini" onclick="editRoute(${t.id})">Edit</button><button class="mini danger" onclick="deleteRoute(${t.id})">Delete</button></div>
+ </div>`;
+}
+function renderTasks(tasks){
+ const board=document.getElementById("taskList");
+ const ids=Object.keys(driverNames).sort((a,b)=>Number(a)-Number(b));
+ let html=driverCard(null,"Unassigned Routes",tasks,true);
+ html+=ids.map(id=>driverCard(id,driverNames[id],tasks,false)).join("");
+ board.innerHTML=html;setupDrag();
 }
 function setupDrag(){
- let dragged=null;
- document.querySelectorAll(".task-card").forEach(card=>{
-  card.addEventListener("dragstart",()=>{dragged=card;card.classList.add("dragging");});
-  card.addEventListener("dragend",()=>{card.classList.remove("dragging");document.querySelectorAll(".task-card").forEach(c=>c.classList.remove("drag-over"));});
-  card.addEventListener("dragover",e=>{e.preventDefault();if(card!==dragged)card.classList.add("drag-over");});
-  card.addEventListener("dragleave",()=>card.classList.remove("drag-over"));
-  card.addEventListener("drop",e=>{
-   e.preventDefault();card.classList.remove("drag-over");if(!dragged||dragged===card)return;
-   const from=Number(dragged.dataset.id),to=Number(card.dataset.id);
-   const fi=currentTasks.findIndex(x=>x.id===from),ti=currentTasks.findIndex(x=>x.id===to);
-   const [item]=currentTasks.splice(fi,1);currentTasks.splice(ti,0,item);saveOrder();renderTasks(currentTasks);
+ let draggedId=null;
+ document.querySelectorAll(".route-mini").forEach(card=>{
+  card.addEventListener("dragstart",()=>{draggedId=Number(card.dataset.id);card.classList.add("dragging");});
+  card.addEventListener("dragend",()=>{card.classList.remove("dragging");document.querySelectorAll(".driver-routes,.route-mini").forEach(x=>x.classList.remove("drag-over"));});
+ });
+ document.querySelectorAll(".driver-routes").forEach(zone=>{
+  zone.addEventListener("dragover",e=>{e.preventDefault();zone.classList.add("drag-over");});
+  zone.addEventListener("dragleave",()=>zone.classList.remove("drag-over"));
+  zone.addEventListener("drop",async e=>{
+   e.preventDefault();zone.classList.remove("drag-over");if(!draggedId)return;
+   const driver=zone.dataset.driver?Number(zone.dataset.driver):null;
+   const t=currentTasks.find(x=>x.id===draggedId);if(!t)return;
+   if((t.assigned_driver_id??null)!==driver){
+    const newStatus=driver?(t.status==="pending"?"assigned":t.status):"pending";
+    const {error}=await db.from("dispatch_tasks").update({assigned_driver_id:driver,status:newStatus}).eq("id",draggedId);
+    if(error){alert("Could not reassign route: "+error.message);return;}
+   }
+   const target=e.target.closest(".route-mini");
+   const from=currentTasks.findIndex(x=>x.id===draggedId);
+   const [item]=currentTasks.splice(from,1);item.assigned_driver_id=driver;
+   let to=target?currentTasks.findIndex(x=>x.id===Number(target.dataset.id)):currentTasks.length;
+   if(to<0)to=currentTasks.length;currentTasks.splice(to,0,item);saveOrder();await loadTasks();
   });
  });
 }
