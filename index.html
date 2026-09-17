@@ -31,7 +31,7 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid #d1d5db;bord
 </style>
 </head>
 <body>
-<header><div><h1>Dispatch Dashboard</h1><p>Driver & Route Management</p></div><div class="status"><span class="status-dot"></span><span id="connectionStatus">Connecting...</span></div></header>
+<header><div><h1>Dispatch Dashboard</h1><p>Driver & Route Management · Build 1.3.1</p></div><div class="status"><span class="status-dot"></span><span id="connectionStatus">Connecting...</span></div></header>
 <div class="container">
 <div class="topbar"><div><h2>Dispatch Board</h2><p>Manage routes, drivers and daily assignments.</p></div><div class="actions"><button class="secondary" onclick="loadTasks()">Refresh</button><button class="primary" onclick="openCreateRoute()">+ Create Route</button></div></div>
 <div class="stats">
@@ -61,7 +61,19 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid #d1d5db;bord
 <div class="field"><label>Material</label><input id="material"></div>
 <div class="field"><label>Pallet Quantity</label><input id="pallet_qty" type="number" min="0"></div>
 <div class="field"><label>Assign Driver</label><select id="assigned_driver_id"><option value="">Loading drivers...</option></select></div>
-<div class="field"><label>Assign Vehicle</label><select id="assigned_vehicle"><option value="">Unassigned</option></select></div>
+<div class="field"><label>Assign Vehicle</label>
+<select id="assigned_vehicle">
+<option value="">Unassigned</option>
+<option>McCook Van</option>
+<option>McCook Hillside</option>
+<option>Sterling 65</option>
+<option>Sterling 66</option>
+<option>International</option>
+<option>Freightliner</option>
+<option>Semi-Truck</option>
+</select>
+<div class="location-note">Vehicle selection is ready; database saving will be connected after the vehicle field is added to dispatch_tasks.</div>
+</div>
 <div class="field full"><label>Special Instructions</label><textarea id="instructions"></textarea></div>
 </div>
 <div id="formMessage" class="form-message"></div>
@@ -95,19 +107,9 @@ const LOCATIONS=[
  {name:"Palatine Post Office",address:"1300 E Northwest Hwy, Palatine, IL 60095"}
 ];
 
-const VEHICLES=["McCook Van","McCook Hillside","Sterling 65","Sterling 66","International","Freightliner","Semi-Truck"];
-
 const safe=v=>(v===null||v===undefined||v==="")?"—":v;
 function formatDate(v){if(!v)return"Not scheduled";return new Date(v).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});}
 function statusClass(s){s=(s||"").toLowerCase();if(s==="completed")return"completed";if(s==="in progress"||s==="in_progress")return"in-progress";if(s==="assigned")return"assigned";return"pending";}
-function getVehicle(instructions){
- const s=instructions||"";
- const start=s.indexOf("[Vehicle: ");
- if(start===-1)return null;
- const end=s.indexOf("]",start);
- if(end===-1)return null;
- return s.slice(start+10,end);
-}
 
 function populateLocations(){
  const options='<option value="">Select location...</option>'+LOCATIONS.map((l,i)=>`<option value="${i}">${l.name}</option>`).join("")+'<option value="custom">Other / Custom Location</option>';
@@ -136,7 +138,7 @@ function updateStats(t){
 }
 function renderTasks(tasks){
  const list=document.getElementById("taskList");if(!tasks?.length){list.innerHTML='<div class="empty">No routes found.</div>';return;}
- list.innerHTML=tasks.map(t=>`<div class="task-card"><div><div class="task-title">${safe(t.title)}</div><div class="small">${safe(t.task_type)}</div><div style="margin-top:8px"><span class="badge ${statusClass(t.status)}">${safe(t.status)}</span></div></div><div><div class="route">${safe(t.pickup_name)}<span class="arrow">→</span>${safe(t.delivery_name)}</div><div class="small">Pickup: ${safe(t.pickup_address)}</div><div class="small">Delivery: ${safe(t.delivery_address)}</div></div><div><div class="small"><strong>Scheduled</strong><br>${formatDate(t.scheduled_at)}</div><div class="small" style="margin-top:7px"><strong>Driver ID</strong><br>${safe(t.assigned_driver_id)}</div><div class="small" style="margin-top:7px"><strong>Vehicle</strong><br>${safe(getVehicle(t.instructions))}</div></div><div><div class="small"><strong>Client / Job</strong><br>${safe(t.job_client)}</div><div class="small" style="margin-top:7px"><strong>Material</strong><br>${safe(t.material)}</div><div class="small" style="margin-top:7px"><strong>Pallets:</strong> ${safe(t.pallet_qty)}</div><div class="small" style="margin-top:7px">Priority: <span class="${(t.priority||"").toLowerCase()==="high"?"high":""}">${safe(t.priority)}</span></div></div></div>`).join("");
+ list.innerHTML=tasks.map(t=>`<div class="task-card"><div><div class="task-title">${safe(t.title)}</div><div class="small">${safe(t.task_type)}</div><div style="margin-top:8px"><span class="badge ${statusClass(t.status)}">${safe(t.status)}</span></div></div><div><div class="route">${safe(t.pickup_name)}<span class="arrow">→</span>${safe(t.delivery_name)}</div><div class="small">Pickup: ${safe(t.pickup_address)}</div><div class="small">Delivery: ${safe(t.delivery_address)}</div></div><div><div class="small"><strong>Scheduled</strong><br>${formatDate(t.scheduled_at)}</div><div class="small" style="margin-top:7px"><strong>Driver ID</strong><br>${safe(t.assigned_driver_id)}</div></div><div><div class="small"><strong>Client / Job</strong><br>${safe(t.job_client)}</div><div class="small" style="margin-top:7px"><strong>Material</strong><br>${safe(t.material)}</div><div class="small" style="margin-top:7px"><strong>Pallets:</strong> ${safe(t.pallet_qty)}</div><div class="small" style="margin-top:7px">Priority: <span class="${(t.priority||"").toLowerCase()==="high"?"high":""}">${safe(t.priority)}</span></div></div></div>`).join("");
 }
 async function loadDrivers(){
  const select=document.getElementById("assigned_driver_id");select.innerHTML='<option value="">Loading drivers...</option>';
@@ -144,11 +146,7 @@ async function loadDrivers(){
  if(error){select.innerHTML='<option value="">Unable to load drivers</option>';return;}
  select.innerHTML='<option value="">Unassigned</option>'+data.map(d=>{const name=d.name||d.full_name||d.driver_name||[d.first_name,d.last_name].filter(Boolean).join(" ")||("Driver "+d.id);return `<option value="${d.id}">${name}</option>`;}).join("");
 }
-function populateVehicles(){
- const select=document.getElementById("assigned_vehicle");
- select.innerHTML='<option value="">Unassigned</option>'+VEHICLES.map(v=>`<option value="${v}">${v}</option>`).join("");
-}
-async function openCreateRoute(){document.getElementById("routeModal").classList.add("show");document.getElementById("formMessage").textContent="";populateLocations();populateVehicles();await loadDrivers();}
+async function openCreateRoute(){document.getElementById("routeModal").classList.add("show");document.getElementById("formMessage").textContent="";populateLocations();await loadDrivers();}
 function closeCreateRoute(){document.getElementById("routeModal").classList.remove("show");}
 document.getElementById("routeModal").addEventListener("click",e=>{if(e.target.id==="routeModal")closeCreateRoute();});
 document.getElementById("routeForm").addEventListener("submit",async e=>{
@@ -157,19 +155,16 @@ document.getElementById("routeForm").addEventListener("submit",async e=>{
  if(!pickupName||!deliveryName){msg.className="form-message failure";msg.textContent="Please select or enter both pickup and delivery locations.";return;}
  btn.disabled=true;btn.textContent="Creating...";msg.textContent="";
  const driver=document.getElementById("assigned_driver_id").value,scheduled=document.getElementById("scheduled_at").value;
- const vehicle=document.getElementById("assigned_vehicle").value;
- const rawInstructions=document.getElementById("instructions").value.trim();
- const savedInstructions=vehicle?`[Vehicle: ${vehicle}]${rawInstructions?"\n"+rawInstructions:""}`:(rawInstructions||null);
  const payload={title:document.getElementById("title").value.trim(),task_type:document.getElementById("task_type").value,status:driver?"assigned":"pending",priority:document.getElementById("priority").value,
  scheduled_at:scheduled?new Date(scheduled).toISOString():null,pickup_name:pickupName,pickup_address:document.getElementById("pickup_address").value.trim()||null,
  delivery_name:deliveryName,delivery_address:document.getElementById("delivery_address").value.trim()||null,job_client:document.getElementById("job_client").value.trim()||null,
  material:document.getElementById("material").value.trim()||null,pallet_qty:document.getElementById("pallet_qty").value?Number(document.getElementById("pallet_qty").value):null,
- instructions:savedInstructions,assigned_driver_id:driver?Number(driver):null};
+ instructions:document.getElementById("instructions").value.trim()||null,assigned_driver_id:driver?Number(driver):null};
  const {error}=await db.from("dispatch_tasks").insert(payload);btn.disabled=false;btn.textContent="Create Route";
  if(error){msg.className="form-message failure";msg.textContent="Could not create route: "+error.message;return;}
  msg.className="form-message success";msg.textContent="Route created successfully.";document.getElementById("routeForm").reset();populateLocations();await loadTasks();setTimeout(closeCreateRoute,650);
 });
-populateLocations();populateVehicles();loadTasks();
+populateLocations();loadTasks();
 </script>
 </body>
 </html>
