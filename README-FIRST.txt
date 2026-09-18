@@ -1,14 +1,14 @@
-SHIFT Dispatch v2.5.2 — Daily Completed Routes
+SHIFT Dispatch v2.5.3 — Location Reliability
 
-No Supabase changes required.
+Replace only index.html in GitHub.
+No new Supabase SQL is required for this update.
 
-Replace only index.html in the Dispatch-Dashboard GitHub repository.
+Changes:
+- Selecting Pickup or Delivery now shows the customer/location name AND full address directly below the dropdown.
+- Custom location previews update while typing.
+- A failure to add a customer to Saved Customers no longer blocks the dispatch route.
+- The route saves normally even if the saved-location database request fails.
+- If Saved Customers fails, SHIFT now displays the actual Supabase error so the database issue can be diagnosed precisely.
+- Existing mobile drag, status controls, daily completed routes, History, and custom locations remain.
 
-New completed-route behavior:
-- Completing a route turns it green.
-- It stays visible on that driver's card for the rest of the day.
-- Completed routes automatically sort below Assigned / In Progress routes.
-- The next day, yesterday's completed routes no longer appear on the active board.
-- Completed routes remain available in View History permanently.
-
-All v2.5.1 features remain included.
+If an error appears after saving a route, take a photo of the exact “Supabase error” text. The route itself will already be saved.
