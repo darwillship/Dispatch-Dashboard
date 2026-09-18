@@ -1,16 +1,17 @@
-SHIFT Dispatch v2.2
+SHIFT Dispatch v2.3 — Polished Dashboard
 
-No Supabase SQL changes are needed.
+No Supabase SQL changes required.
 
-Upload BOTH files to the root of Dispatch-Dashboard:
-- index.html (replace existing)
-- shift-logo.png (new)
-
-You can delete the old shift-logo.jpg after confirming v2.2 works.
+Upload to the root of Dispatch-Dashboard:
+1. index.html — replace existing
+2. shift-logo.png — replace existing
 
 Changes:
-- SHIFT logo is transparent, fully visible, centered, and blended into the header.
-- Removed Dispatch Board / Planning → Ready → Drivers / Build 2.1 header copy.
-- Restored History with completed-route history.
-- Added more color to planning, ready, driver, in-progress, and priority task cards.
-- Existing drag-and-drop workflow remains.
+- Rebuilt the SHIFT logo asset at much higher resolution with generous bounds so the S/emblem is not cut off.
+- Logo remains centered and blended into the dark header.
+- Added real-data KPI cards for Active Routes, Drivers Assigned, Tasks Today and Completion Rate.
+- More colorful Plan/Ready/Driver task cards.
+- Added driver search.
+- Kept drag-and-drop planning workflow.
+- Kept View History and completed-route history.
+- No fake map/messages were added; this build only surfaces functions backed by the existing app/database.
