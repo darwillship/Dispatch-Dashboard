@@ -60,10 +60,6 @@ button{font:inherit;border:0;cursor:pointer}.btn{padding:11px 15px;border-radius
 .status-btn.active-assigned{border-color:#178cff;color:#76baff;background:rgba(10,132,255,.12)}
 .status-btn.active-progress{border-color:#ffc107;color:#ffd34d;background:rgba(255,193,7,.12)}
 .status-btn.active-completed{border-color:#22c55e;color:#69df91;background:rgba(34,197,94,.12)}
-
-.location-preview{margin-top:7px;padding:8px 10px;border:1px solid #26394c;border-radius:8px;background:#0c1621;color:#91a6ba;font-size:11px;line-height:1.35;min-height:32px}
-.location-preview strong{color:#d9e7f5;font-weight:750}
-.location-warning{margin-top:7px;color:#ffcf5a;font-size:11px}
 </style></head>
 <body><header><div></div><div class="shift-brand"><img src="shift-logo.png" alt="SHIFT"></div><div class="live"><i class="dot"></i><span id="conn">Connecting…</span></div>
 </header>
@@ -82,9 +78,9 @@ button{font:inherit;border:0;cursor:pointer}.btn{padding:11px 15px;border-radius
 <div class="modal" id="modal"><div class="dialog"><div class="dialog-head"><div><b id="modalTitle">New Task</b><div class="muted" style="font-size:12px;margin-top:3px">Add what you know now. Finish details later.</div></div><button class="close" onclick="closeTask()">×</button></div>
 <form id="form"><input type="hidden" id="id"><input type="hidden" id="stage"><div class="grid">
 <div><label>Pickup *</label><select id="pickup" required onchange="toggleCustomLocation('pickup')"></select>
-<div id="pickupCustom" class="custom-location hidden"><input id="pickupCustomName" placeholder="Customer / location name"><input id="pickupCustomAddress" placeholder="Full pickup address"><label class="save-location"><input type="checkbox" id="pickupSave"> Save this location for future routes</label></div><div id="pickupPreview" class="location-preview">Select a pickup location to see the address.</div></div>
+<div id="pickupCustom" class="custom-location hidden"><input id="pickupCustomName" placeholder="Customer / location name"><input id="pickupCustomAddress" placeholder="Full pickup address"><label class="save-location"><input type="checkbox" id="pickupSave"> Save this location for future routes</label></div></div>
 <div><label>Delivery *</label><select id="delivery" required onchange="toggleCustomLocation('delivery')"></select>
-<div id="deliveryCustom" class="custom-location hidden"><input id="deliveryCustomName" placeholder="Customer / location name"><input id="deliveryCustomAddress" placeholder="Full delivery address"><label class="save-location"><input type="checkbox" id="deliverySave"> Save this location for future routes</label></div><div id="deliveryPreview" class="location-preview">Select a delivery location to see the address.</div></div>
+<div id="deliveryCustom" class="custom-location hidden"><input id="deliveryCustomName" placeholder="Customer / location name"><input id="deliveryCustomAddress" placeholder="Full delivery address"><label class="save-location"><input type="checkbox" id="deliverySave"> Save this location for future routes</label></div></div>
 <div><label>Scheduled</label><input id="scheduled" type="datetime-local"></div><div><label>Priority</label><select id="priority"><option>normal</option><option>high</option><option>low</option></select></div>
 <div><label>Client / Job</label><input id="job"></div><div><label>Material</label><input id="material"></div>
 <div><label>Pallets</label><input id="pallets" type="number" min="0"></div><div><label>Task Type</label><select id="type"><option>shuttle</option><option>pickup</option><option>delivery</option><option>other</option></select></div>
@@ -140,13 +136,7 @@ async function moveDriver(id,driver,before){let list=tasks.filter(t=>Number(t.as
 async function load(){let [dr,tr]=await Promise.all([db.from("drivers").select("*").order("id"),db.from("dispatch_tasks").select("*").order("sort_order")]);if(dr.error||tr.error){$("conn").textContent="Connection error";alert((dr.error||tr.error).message);return}$("conn").textContent="Supabase connected";drivers=(dr.data||[]).map(d=>({id:d.id,name:d.name||d.full_name||d.driver_name||`Driver ${d.id}`}));allTasks=(tr.data||[]);updateMetrics();tasks=allTasks.filter(t=>!t.scheduled_at||ymd(t.scheduled_at)===ymd(new Date()));render()}
 function openHistory(){let done=allTasks.filter(t=>t.status==="completed").sort((a,b)=>new Date(b.completed_at||b.scheduled_at||b.created_at)-new Date(a.completed_at||a.scheduled_at||a.created_at));$("historyList").innerHTML=done.length?done.map(t=>{let d=drivers.find(x=>Number(x.id)===Number(t.assigned_driver_id));return `<div class="history-row"><div class="history-date">${fmt(t.completed_at||t.scheduled_at||t.created_at)}</div><div class="history-route">${esc(t.pickup_name)} → ${esc(t.delivery_name)}</div><div class="history-driver">${esc(d?.name||"Unassigned")}</div><div class="history-status">Completed</div></div>`}).join(""):'<div class="empty">No completed routes yet.</div>';$("historyModal").classList.add("show")}
 function closeHistory(){$("historyModal").classList.remove("show")}
-function updateLocationPreview(which){
- let loc=locationFromForm(which), box=$(which+"Preview");
- if(!box)return;
- if(loc&&loc[0]&&loc[1])box.innerHTML=`<strong>${esc(loc[0])}</strong><br>${esc(loc[1])}`;
- else box.textContent="Select a "+which+" location to see the address.";
-}
-function toggleCustomLocation(which){let custom=$(which).value==="custom";$(which+"Custom").classList.toggle("hidden",!custom);$(which+"CustomName").required=custom;$(which+"CustomAddress").required=custom;updateLocationPreview(which)}
+function toggleCustomLocation(which){let custom=$(which).value==="custom";$(which+"Custom").classList.toggle("hidden",!custom);$(which+"CustomName").required=custom;$(which+"CustomAddress").required=custom}
 function locationFromForm(which){let v=$(which).value;if(v==="custom")return [$(which+"CustomName").value.trim(),$(which+"CustomAddress").value.trim()];if(v.startsWith("builtin:"))return LOC[Number(v.split(":")[1])];if(v.startsWith("saved:")){let x=savedLocations.find(s=>String(s.id)===v.split(":")[1]);return x?[x.name,x.address]:null}return null}
 async function loadSavedLocations(){let r=await db.from("saved_locations").select("*").order("name");if(r.error){console.error("Saved locations:",r.error);return}savedLocations=r.data||[]}
 async function saveLocationIfRequested(which,loc){if($(which).value!=="custom"||!$(which+"Save").checked)return;let existing=savedLocations.find(x=>x.name.toLowerCase()===loc[0].toLowerCase()&&x.address.toLowerCase()===loc[1].toLowerCase());if(existing)return;let r=await db.from("saved_locations").insert({name:loc[0],address:loc[1]}).select().single();if(r.error)throw r.error;savedLocations.push(r.data);savedLocations.sort((a,b)=>a.name.localeCompare(b.name))}
@@ -155,15 +145,8 @@ function closeTask(){$("modal").classList.remove("show")}
 function editTask(id){let t=tasks.find(x=>x.id===id);if(!t)return;openTask(t.planning_stage||"ready");$("id").value=id;$("modalTitle").textContent="Edit Task";let pi=LOC.findIndex(x=>x[0]===t.pickup_name&&x[1]===t.pickup_address),di=LOC.findIndex(x=>x[0]===t.delivery_name&&x[1]===t.delivery_address);
 let ps=savedLocations.find(x=>x.name===t.pickup_name&&x.address===t.pickup_address),ds=savedLocations.find(x=>x.name===t.delivery_name&&x.address===t.delivery_address);
 if(pi>=0){$("pickup").value="builtin:"+pi}else if(ps){$("pickup").value="saved:"+ps.id}else{$("pickup").value="custom";$("pickupCustomName").value=t.pickup_name||"";$("pickupCustomAddress").value=t.pickup_address||"";toggleCustomLocation("pickup")}
-if(di>=0){$("delivery").value="builtin:"+di}else if(ds){$("delivery").value="saved:"+ds.id}else{$("delivery").value="custom";$("deliveryCustomName").value=t.delivery_name||"";$("deliveryCustomAddress").value=t.delivery_address||"";toggleCustomLocation("delivery")};updateLocationPreview("pickup");updateLocationPreview("delivery")if(t.scheduled_at){let d=new Date(t.scheduled_at);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());$("scheduled").value=d.toISOString().slice(0,16)}$("priority").value=t.priority||"normal";$("job").value=t.job_client||"";$("material").value=t.material||"";$("pallets").value=t.pallet_qty??"";$("type").value=t.task_type||"other";$("notes").value=t.instructions||""}
-$("form").onsubmit=async e=>{e.preventDefault();let p=locationFromForm("pickup"),d=locationFromForm("delivery");if(!p||!d||!p[0]||!p[1]||!d[0]||!d[1])return alert("Please enter both a location name and full address.");let locationSaveError=null;
-try{
- await saveLocationIfRequested("pickup",p);
- await saveLocationIfRequested("delivery",d);
-}catch(err){
- locationSaveError=err;
- console.error("Saved customer location error:",err);
-}let payload={title:p[0]+" - "+d[0],pickup_name:p[0],pickup_address:p[1],delivery_name:d[0],delivery_address:d[1],scheduled_at:$("scheduled").value?new Date($("scheduled").value).toISOString():null,priority:$("priority").value,job_client:$("job").value||null,material:$("material").value||null,pallet_qty:$("pallets").value?Number($("pallets").value):null,task_type:$("type").value,instructions:$("notes").value||null};let id=$("id").value;if(id)await db.from("dispatch_tasks").update(payload).eq("id",Number(id));else await db.from("dispatch_tasks").insert({...payload,status:"pending",planning_stage:$("stage").value,sort_order:999});closeTask();await load()}
+if(di>=0){$("delivery").value="builtin:"+di}else if(ds){$("delivery").value="saved:"+ds.id}else{$("delivery").value="custom";$("deliveryCustomName").value=t.delivery_name||"";$("deliveryCustomAddress").value=t.delivery_address||"";toggleCustomLocation("delivery")}if(t.scheduled_at){let d=new Date(t.scheduled_at);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());$("scheduled").value=d.toISOString().slice(0,16)}$("priority").value=t.priority||"normal";$("job").value=t.job_client||"";$("material").value=t.material||"";$("pallets").value=t.pallet_qty??"";$("type").value=t.task_type||"other";$("notes").value=t.instructions||""}
+$("form").onsubmit=async e=>{e.preventDefault();let p=locationFromForm("pickup"),d=locationFromForm("delivery");if(!p||!d||!p[0]||!p[1]||!d[0]||!d[1])return alert("Please enter both a location name and full address.");try{await saveLocationIfRequested("pickup",p);await saveLocationIfRequested("delivery",d)}catch(err){console.error(err);return alert("The route was not saved because the customer location could not be saved. Please try again.")}let payload={title:p[0]+" - "+d[0],pickup_name:p[0],pickup_address:p[1],delivery_name:d[0],delivery_address:d[1],scheduled_at:$("scheduled").value?new Date($("scheduled").value).toISOString():null,priority:$("priority").value,job_client:$("job").value||null,material:$("material").value||null,pallet_qty:$("pallets").value?Number($("pallets").value):null,task_type:$("type").value,instructions:$("notes").value||null};let id=$("id").value;if(id)await db.from("dispatch_tasks").update(payload).eq("id",Number(id));else await db.from("dispatch_tasks").insert({...payload,status:"pending",planning_stage:$("stage").value,sort_order:999});closeTask();await load()}
 async function removeTask(id){if(!confirm("Delete this task?"))return;let {error}=await db.from("dispatch_tasks").delete().eq("id",id);if(error)return alert(error.message);await load()}
 $("modal").onclick=e=>{if(e.target===$("modal"))closeTask()};$("historyModal").onclick=e=>{if(e.target===$("historyModal"))closeHistory()};load();setInterval(()=>{if(!$("modal").classList.contains("show"))load()},20000);
 
@@ -199,8 +182,6 @@ async function mobileTaskUp(e){
   if(target.dataset.dropDriver){await moveTask(id,"assigned",Number(target.dataset.dropDriver))}
   else if(target.dataset.dropStage){await moveTask(id,target.dataset.dropStage,null)}
 }
-["pickupCustomName","pickupCustomAddress"].forEach(id=>$(id)?.addEventListener("input",()=>updateLocationPreview("pickup")));
-["deliveryCustomName","deliveryCustomAddress"].forEach(id=>$(id)?.addEventListener("input",()=>updateLocationPreview("delivery")));
 document.addEventListener("pointerdown",mobileTaskDown,{passive:true});
 document.addEventListener("pointermove",mobileTaskMove,{passive:false});
 document.addEventListener("pointerup",mobileTaskUp,{passive:false});
