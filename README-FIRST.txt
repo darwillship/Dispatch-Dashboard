@@ -1,19 +1,24 @@
-SHIFT Dispatch v2.5 — Saved Customer Locations
+SHIFT Dispatch v2.5.1 — Route Status Controls
 
-STEP 1
-Run SUPABASE-SAVED-LOCATIONS.sql once in Supabase SQL Editor.
+No additional Supabase SQL is required beyond the v2.5 saved-locations SQL.
 
-STEP 2
-Replace index.html in the Dispatch-Dashboard GitHub repository.
-The existing shift-logo.png can stay as-is.
+Replace only index.html in the Dispatch-Dashboard GitHub repository.
 
-New workflow:
-1. Pickup or Delivery → + Type a new location…
-2. Enter customer/location name and full address.
-3. Check “Save this location for future routes.”
-4. Save the task.
-5. The location becomes available under “Saved Customers” in both Pickup and Delivery dropdowns for the whole team.
+Assigned driver route cards now include:
+- Assigned
+- In Progress
+- Complete
 
-The route itself still stores the customer name/address, so existing Driver app behavior is preserved.
+Status behavior:
+- Assigned = blue/cyan
+- In Progress = yellow
+- Complete = green and moves into History
 
-All v2.4.2 features remain, including mobile drag-and-drop and the single status-color stripe.
+The dashboard updates Supabase, so the route status is shared with the connected Driver app.
+
+All v2.5 features remain included:
+- Saved customer locations
+- Custom pickup/delivery locations
+- Mobile drag-and-drop
+- History
+- Status color fix

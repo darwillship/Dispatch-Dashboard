@@ -54,6 +54,12 @@ button{font:inherit;border:0;cursor:pointer}.btn{padding:11px 15px;border-radius
 
 .save-location{display:flex!important;align-items:center;gap:8px;font-size:11px!important;color:#b9c7d6!important;margin:2px 0 0!important;cursor:pointer}
 .save-location input{width:16px!important;height:16px!important;accent-color:var(--blue)}
+
+.status-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.status-btn{font-size:10px;font-weight:850;padding:6px 9px;border-radius:7px;border:1px solid #2a4056;background:#152334;color:#aebed0}
+.status-btn.active-assigned{border-color:#178cff;color:#76baff;background:rgba(10,132,255,.12)}
+.status-btn.active-progress{border-color:#ffc107;color:#ffd34d;background:rgba(255,193,7,.12)}
+.status-btn.active-completed{border-color:#22c55e;color:#69df91;background:rgba(34,197,94,.12)}
 </style></head>
 <body><header><div></div><div class="shift-brand"><img src="shift-logo.png" alt="SHIFT"></div><div class="live"><i class="dot"></i><span id="conn">Connecting…</span></div>
 </header>
@@ -90,8 +96,24 @@ const $=id=>document.getElementById(id), esc=s=>String(s??"").replace(/[&<>"']/g
 function ymd(v){let d=new Date(v);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")}
 function fmt(v){return v?new Date(v).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"Time TBD"}
 function options(){let built=LOC.map((x,i)=>`<option value="builtin:${i}">${x[0]}</option>`).join("");let saved=savedLocations.map(x=>`<option value="saved:${x.id}">${esc(x.name)}</option>`).join("");return '<option value="">Select…</option>'+built+(saved?'<optgroup label="Saved Customers">'+saved+'</optgroup>':'')+'<option value="custom">+ Type a new location…</option>'}
-function taskCard(t){let st=(t.status||"pending").toLowerCase().replace(" ","_");return `<article class="task" draggable="true" data-id="${t.id}" data-id="${t.id}"><div class="task-top"><div class="route">${esc(t.pickup_name)} → ${esc(t.delivery_name)}</div><span class="grip">⋮⋮</span></div><div class="meta">${fmt(t.scheduled_at)}${t.job_client?" · "+esc(t.job_client):""}${t.pallet_qty!=null?" · "+t.pallet_qty+" pallets":""}</div><span class="tag ${t.priority==="high"?"high":""}">${esc(t.priority||"normal")}</span>${t.assigned_driver_id?` <span class="status ${st}">${esc((t.status||"assigned").replace("_"," "))}</span>`:""}<div class="task-actions"><button class="mini" onclick="event.stopPropagation();editTask(${t.id})">Edit</button><button class="mini danger" onclick="event.stopPropagation();removeTask(${t.id})">Delete</button></div></article>`}
+function taskCard(t){let st=(t.status||"pending").toLowerCase().replace(" ","_");return `<article class="task" draggable="true" data-id="${t.id}" data-id="${t.id}"><div class="task-top"><div class="route">${esc(t.pickup_name)} → ${esc(t.delivery_name)}</div><span class="grip">⋮⋮</span></div><div class="meta">${fmt(t.scheduled_at)}${t.job_client?" · "+esc(t.job_client):""}${t.pallet_qty!=null?" · "+t.pallet_qty+" pallets":""}</div><span class="tag ${t.priority==="high"?"high":""}">${esc(t.priority||"normal")}</span>${t.assigned_driver_id?` <span class="status ${st}">${esc((t.status||"assigned").replace("_"," "))}</span>`:""}<div class="task-actions"><button class="mini" onclick="event.stopPropagation();editTask(${t.id})">Edit</button><button class="mini danger" onclick="event.stopPropagation();removeTask(${t.id})">Delete</button></div>${statusControls(t)}</article>`}
 function updateMetrics(){let today=allTasks.filter(t=>!t.scheduled_at||ymd(t.scheduled_at)===ymd(new Date()));let completed=today.filter(t=>t.status==="completed").length;let active=today.filter(t=>t.assigned_driver_id&&t.status!=="completed").length;let assigned=new Set(today.filter(t=>t.assigned_driver_id&&t.status!=="completed").map(t=>String(t.assigned_driver_id))).size;$("mActive").textContent=active;$("mDrivers").textContent=assigned;$("mTasks").textContent=today.length;$("mRate").textContent=today.length?Math.round(completed/today.length*100)+"%":"0%"}
+function statusControls(t){
+ if(!t.assigned_driver_id)return "";
+ return `<div class="status-actions">
+ <button class="status-btn ${t.status==="assigned"?"active-assigned":""}" onclick="event.stopPropagation();setTaskStatus(${t.id},'assigned')">Assigned</button>
+ <button class="status-btn ${t.status==="in_progress"?"active-progress":""}" onclick="event.stopPropagation();setTaskStatus(${t.id},'in_progress')">In Progress</button>
+ <button class="status-btn ${t.status==="completed"?"active-completed":""}" onclick="event.stopPropagation();setTaskStatus(${t.id},'completed')">Complete</button>
+ </div>`;
+}
+async function setTaskStatus(id,status){
+ let patch={status};
+ if(status==="completed")patch.completed_at=new Date().toISOString();
+ else patch.completed_at=null;
+ let r=await db.from("dispatch_tasks").update(patch).eq("id",id);
+ if(r.error){console.error(r.error);alert("Could not update route status.");return}
+ await load();
+}
 function render(){
  let brain=tasks.filter(t=>!t.assigned_driver_id&&(t.planning_stage||"ready")==="brainstorm"),ready=tasks.filter(t=>!t.assigned_driver_id&&(t.planning_stage||"ready")!=="brainstorm");
  $("brainstorm").innerHTML=brain.length?brain.map(taskCard).join(""):'<div class="empty">Drop ideas here<br>Details can be incomplete.</div>';
