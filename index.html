@@ -21,8 +21,8 @@ button{font:inherit;border:0;cursor:pointer}.btn{padding:11px 15px;border-radius
 #brainstorm .task{border-left-color:var(--purple);background:linear-gradient(145deg,rgba(152,108,255,.17),#111c29 62%)}
 #ready .task{border-left-color:var(--blue);background:linear-gradient(145deg,rgba(10,132,255,.18),#111c29 62%)}
 .driver-routes .task{border-left-color:var(--cyan);background:linear-gradient(145deg,rgba(0,198,255,.13),#111c29 62%)}
-.task:has(.status.in_progress){border-left-color:var(--amber);background:linear-gradient(145deg,rgba(255,193,7,.15),#111c29 62%)}
-.task:has(.status.completed){border-left-color:var(--green)}
+.task:has(.status.in_progress){border-left-color:var(--amber)!important;background:linear-gradient(145deg,rgba(255,193,7,.15),#111c29 62%)}
+.task:has(.status.completed){border-left-color:var(--green)!important}
 .history-btn{margin-left:8px;background:#111c29;border:1px solid #2b4058;color:#dce7f2}
 .history-modal .dialog{width:min(1000px,100%)}
 .history-list{padding:8px 20px 22px}
@@ -36,13 +36,21 @@ button{font:inherit;border:0;cursor:pointer}.btn{padding:11px 15px;border-radius
 .metric-icon{font-size:28px;filter:saturate(1.2)}.metric b{display:block;font-size:25px;line-height:1;color:#fff}.metric small{display:block;color:#a8b7c8;margin-top:7px}.metric-ring{width:55px;height:55px;border:6px solid var(--blue);border-radius:50%;display:grid;place-items:center;font-weight:900;font-size:12px;box-shadow:0 0 18px rgba(10,132,255,.2)}
 .driver-search{width:165px!important;padding:8px 10px!important;font-size:11px!important}
 .lane-head .lane-title{font-size:14px}.drivers-head{min-height:48px}
-.task{position:relative;overflow:hidden}.task:before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:currentColor;opacity:.9}
+.task{position:relative;overflow:hidden}
 #brainstorm .task{color:#d7c4ff}.task .route,.task .meta,.task-actions{color:initial}.task .route{color:#fff}.task .meta{color:var(--muted)}
 #ready .task{color:#61adff}.driver-routes .task{color:#39d9ff}
 .lane{background:linear-gradient(180deg,rgba(13,23,35,.98),rgba(7,14,22,.98))}
 .driver{background:linear-gradient(180deg,#0f1c29,#09131d)}
 .toolbar{border-left:3px solid var(--blue);padding-left:14px}
 @media(max-width:1000px){.metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.metrics{grid-template-columns:1fr 1fr}.metric{padding:12px}.metric-icon{display:none}.driver-search{width:130px!important}}
+
+.custom-location{margin-top:8px;display:grid;gap:7px}.custom-location.hidden{display:none}
+.custom-location input{border-color:#31506e;background:#0a1723}
+
+.task{touch-action:pan-y;-webkit-user-select:none;user-select:none}
+.task.mobile-dragging{opacity:.82;transform:scale(1.025);box-shadow:0 18px 38px rgba(0,0,0,.48);z-index:999}
+.mobile-drop-target{outline:2px dashed var(--cyan)!important;outline-offset:3px;background:#0d2540!important}
+@media(pointer:coarse){.task{cursor:grab}.grip{font-size:18px;padding:4px 7px}.task-actions button{min-height:38px}}
 </style></head>
 <body><header><div></div><div class="shift-brand"><img src="shift-logo.png" alt="SHIFT"></div><div class="live"><i class="dot"></i><span id="conn">Connecting…</span></div>
 </header>
@@ -53,14 +61,17 @@ button{font:inherit;border:0;cursor:pointer}.btn{padding:11px 15px;border-radius
 <div class="metric"><span class="metric-icon">☑</span><div><b id="mTasks">0</b><small>Tasks Today</small></div></div>
 <div class="metric"><span class="metric-ring" id="mRate">0%</span><div><small>Completion Rate</small></div></div>
 </section><div class="board">
-<section class="lane"><div class="lane-head"><span class="lane-title">💡 Plan & Prepare</span><span class="count" id="brainCount">0</span></div><div class="dropzone" id="brainstorm" data-stage="brainstorm"></div></section>
-<section class="lane"><div class="lane-head"><span class="lane-title">✓ Ready to Assign</span><span class="count" id="readyCount">0</span></div><div class="dropzone" id="ready" data-stage="ready"></div></section>
+<section class="lane"><div class="lane-head"><span class="lane-title">💡 Plan & Prepare</span><span class="count" id="brainCount">0</span></div><div class="dropzone" id="brainstorm" data-drop-stage="brainstorm" data-stage="brainstorm"></div></section>
+<section class="lane"><div class="lane-head"><span class="lane-title">✓ Ready to Assign</span><span class="count" id="readyCount">0</span></div><div class="dropzone" id="ready" data-drop-stage="ready" data-stage="ready"></div></section>
 <section class="drivers-lane"><div class="drivers-head"><div><span class="lane-title">Drivers</span><div class="muted" style="font-size:11px;margin-top:3px">Drop tasks onto a driver.</div></div><input class="driver-search" id="driverSearch" placeholder="Search drivers…" oninput="render()"></div><div class="drivers" id="drivers"></div></section>
 </div></main>
 <div class="modal history-modal" id="historyModal"><div class="dialog"><div class="dialog-head"><div><b>Route History</b><div class="muted" style="font-size:12px;margin-top:3px">Completed routes</div></div><button class="close" onclick="closeHistory()">×</button></div><div class="history-list" id="historyList"></div></div></div>
 <div class="modal" id="modal"><div class="dialog"><div class="dialog-head"><div><b id="modalTitle">New Task</b><div class="muted" style="font-size:12px;margin-top:3px">Add what you know now. Finish details later.</div></div><button class="close" onclick="closeTask()">×</button></div>
 <form id="form"><input type="hidden" id="id"><input type="hidden" id="stage"><div class="grid">
-<div><label>Pickup *</label><select id="pickup" required></select></div><div><label>Delivery *</label><select id="delivery" required></select></div>
+<div><label>Pickup *</label><select id="pickup" required onchange="toggleCustomLocation('pickup')"></select>
+<div id="pickupCustom" class="custom-location hidden"><input id="pickupCustomName" placeholder="Customer / location name"><input id="pickupCustomAddress" placeholder="Full pickup address"></div></div>
+<div><label>Delivery *</label><select id="delivery" required onchange="toggleCustomLocation('delivery')"></select>
+<div id="deliveryCustom" class="custom-location hidden"><input id="deliveryCustomName" placeholder="Customer / location name"><input id="deliveryCustomAddress" placeholder="Full delivery address"></div></div>
 <div><label>Scheduled</label><input id="scheduled" type="datetime-local"></div><div><label>Priority</label><select id="priority"><option>normal</option><option>high</option><option>low</option></select></div>
 <div><label>Client / Job</label><input id="job"></div><div><label>Material</label><input id="material"></div>
 <div><label>Pallets</label><input id="pallets" type="number" min="0"></div><div><label>Task Type</label><select id="type"><option>shuttle</option><option>pickup</option><option>delivery</option><option>other</option></select></div>
@@ -75,15 +86,15 @@ let tasks=[],allTasks=[],drivers=[],dragId=null;
 const $=id=>document.getElementById(id), esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 function ymd(v){let d=new Date(v);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")}
 function fmt(v){return v?new Date(v).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"Time TBD"}
-function options(){return '<option value="">Select…</option>'+LOC.map((x,i)=>`<option value="${i}">${x[0]}</option>`).join("")}
-function taskCard(t){let st=(t.status||"pending").toLowerCase().replace(" ","_");return `<article class="task" draggable="true" data-id="${t.id}"><div class="task-top"><div class="route">${esc(t.pickup_name)} → ${esc(t.delivery_name)}</div><span class="grip">⋮⋮</span></div><div class="meta">${fmt(t.scheduled_at)}${t.job_client?" · "+esc(t.job_client):""}${t.pallet_qty!=null?" · "+t.pallet_qty+" pallets":""}</div><span class="tag ${t.priority==="high"?"high":""}">${esc(t.priority||"normal")}</span>${t.assigned_driver_id?` <span class="status ${st}">${esc((t.status||"assigned").replace("_"," "))}</span>`:""}<div class="task-actions"><button class="mini" onclick="event.stopPropagation();editTask(${t.id})">Edit</button><button class="mini danger" onclick="event.stopPropagation();removeTask(${t.id})">Delete</button></div></article>`}
+function options(){return '<option value="">Select…</option>'+LOC.map((x,i)=>`<option value="${i}">${x[0]}</option>`).join("")+'<option value="custom">+ Type a new location…</option>'}
+function taskCard(t){let st=(t.status||"pending").toLowerCase().replace(" ","_");return `<article class="task" draggable="true" data-id="${t.id}" data-id="${t.id}"><div class="task-top"><div class="route">${esc(t.pickup_name)} → ${esc(t.delivery_name)}</div><span class="grip">⋮⋮</span></div><div class="meta">${fmt(t.scheduled_at)}${t.job_client?" · "+esc(t.job_client):""}${t.pallet_qty!=null?" · "+t.pallet_qty+" pallets":""}</div><span class="tag ${t.priority==="high"?"high":""}">${esc(t.priority||"normal")}</span>${t.assigned_driver_id?` <span class="status ${st}">${esc((t.status||"assigned").replace("_"," "))}</span>`:""}<div class="task-actions"><button class="mini" onclick="event.stopPropagation();editTask(${t.id})">Edit</button><button class="mini danger" onclick="event.stopPropagation();removeTask(${t.id})">Delete</button></div></article>`}
 function updateMetrics(){let today=allTasks.filter(t=>!t.scheduled_at||ymd(t.scheduled_at)===ymd(new Date()));let completed=today.filter(t=>t.status==="completed").length;let active=today.filter(t=>t.assigned_driver_id&&t.status!=="completed").length;let assigned=new Set(today.filter(t=>t.assigned_driver_id&&t.status!=="completed").map(t=>String(t.assigned_driver_id))).size;$("mActive").textContent=active;$("mDrivers").textContent=assigned;$("mTasks").textContent=today.length;$("mRate").textContent=today.length?Math.round(completed/today.length*100)+"%":"0%"}
 function render(){
  let brain=tasks.filter(t=>!t.assigned_driver_id&&(t.planning_stage||"ready")==="brainstorm"),ready=tasks.filter(t=>!t.assigned_driver_id&&(t.planning_stage||"ready")!=="brainstorm");
  $("brainstorm").innerHTML=brain.length?brain.map(taskCard).join(""):'<div class="empty">Drop ideas here<br>Details can be incomplete.</div>';
  $("ready").innerHTML=ready.length?ready.map(taskCard).join(""):'<div class="empty">Drag planned work here<br>when it is ready to dispatch.</div>';
  $("brainCount").textContent=brain.length;$("readyCount").textContent=ready.length;
- $("drivers").innerHTML=drivers.filter(d=>!$("driverSearch")||!$("driverSearch").value||d.name.toLowerCase().includes($("driverSearch").value.toLowerCase())).map(d=>{let mine=tasks.filter(t=>Number(t.assigned_driver_id)===Number(d.id)&&t.status!=="completed").sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));return `<section class="driver"><div class="driver-head"><span class="driver-name">${esc(d.name)}</span><span class="count">${mine.length}</span></div><div class="driver-routes" data-driver="${d.id}">${mine.length?mine.map(taskCard).join(""):'<div class="empty">Drop route here</div>'}</div></section>`}).join("");
+ $("drivers").innerHTML=drivers.filter(d=>!$("driverSearch")||!$("driverSearch").value||d.name.toLowerCase().includes($("driverSearch").value.toLowerCase())).map(d=>{let mine=tasks.filter(t=>Number(t.assigned_driver_id)===Number(d.id)&&t.status!=="completed").sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));return `<section class="driver"><div class="driver-head"><span class="driver-name">${esc(d.name)}</span><span class="count">${mine.length}</span></div><div class="driver-routes" data-driver="${d.id}" data-drop-driver="${d.id}">${mine.length?mine.map(taskCard).join(""):'<div class="empty">Drop route here</div>'}</div></section>`}).join("");
  bindDrag();
 }
 function bindDrag(){
@@ -95,10 +106,51 @@ async function moveDriver(id,driver,before){let list=tasks.filter(t=>Number(t.as
 async function load(){let [dr,tr]=await Promise.all([db.from("drivers").select("*").order("id"),db.from("dispatch_tasks").select("*").order("sort_order")]);if(dr.error||tr.error){$("conn").textContent="Connection error";alert((dr.error||tr.error).message);return}$("conn").textContent="Supabase connected";drivers=(dr.data||[]).map(d=>({id:d.id,name:d.name||d.full_name||d.driver_name||`Driver ${d.id}`}));allTasks=(tr.data||[]);updateMetrics();tasks=allTasks.filter(t=>(!t.scheduled_at||ymd(t.scheduled_at)===ymd(new Date()))&&t.status!=="completed");render()}
 function openHistory(){let done=allTasks.filter(t=>t.status==="completed").sort((a,b)=>new Date(b.completed_at||b.scheduled_at||b.created_at)-new Date(a.completed_at||a.scheduled_at||a.created_at));$("historyList").innerHTML=done.length?done.map(t=>{let d=drivers.find(x=>Number(x.id)===Number(t.assigned_driver_id));return `<div class="history-row"><div class="history-date">${fmt(t.completed_at||t.scheduled_at||t.created_at)}</div><div class="history-route">${esc(t.pickup_name)} → ${esc(t.delivery_name)}</div><div class="history-driver">${esc(d?.name||"Unassigned")}</div><div class="history-status">Completed</div></div>`}).join(""):'<div class="empty">No completed routes yet.</div>';$("historyModal").classList.add("show")}
 function closeHistory(){$("historyModal").classList.remove("show")}
-function openTask(stage="brainstorm"){ $("form").reset();$("id").value="";$("stage").value=stage;$("pickup").innerHTML=options();$("delivery").innerHTML=options();$("modalTitle").textContent=stage==="brainstorm"?"Quick Planning Task":"New Task";$("modal").classList.add("show")}
+function toggleCustomLocation(which){let custom=$(which).value==="custom";$(which+"Custom").classList.toggle("hidden",!custom);$(which+"CustomName").required=custom;$(which+"CustomAddress").required=custom}
+function locationFromForm(which){if($(which).value==="custom")return [$(which+"CustomName").value.trim(),$(which+"CustomAddress").value.trim()];return LOC[Number($(which).value)]}
+function openTask(stage="brainstorm"){ $("form").reset();$("id").value="";$("stage").value=stage;$("pickup").innerHTML=options();$("delivery").innerHTML=options();$("pickupCustom").classList.add("hidden");$("deliveryCustom").classList.add("hidden");$("pickupCustomName").required=false;$("pickupCustomAddress").required=false;$("deliveryCustomName").required=false;$("deliveryCustomAddress").required=false;$("modalTitle").textContent=stage==="brainstorm"?"Quick Planning Task":"New Task";$("modal").classList.add("show")}
 function closeTask(){$("modal").classList.remove("show")}
-function editTask(id){let t=tasks.find(x=>x.id===id);if(!t)return;openTask(t.planning_stage||"ready");$("id").value=id;$("modalTitle").textContent="Edit Task";let pi=LOC.findIndex(x=>x[0]===t.pickup_name),di=LOC.findIndex(x=>x[0]===t.delivery_name);$("pickup").value=pi>=0?pi:"";$("delivery").value=di>=0?di:"";if(t.scheduled_at){let d=new Date(t.scheduled_at);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());$("scheduled").value=d.toISOString().slice(0,16)}$("priority").value=t.priority||"normal";$("job").value=t.job_client||"";$("material").value=t.material||"";$("pallets").value=t.pallet_qty??"";$("type").value=t.task_type||"other";$("notes").value=t.instructions||""}
-$("form").onsubmit=async e=>{e.preventDefault();let p=LOC[Number($("pickup").value)],d=LOC[Number($("delivery").value)];if(!p||!d)return;let payload={title:p[0]+" - "+d[0],pickup_name:p[0],pickup_address:p[1],delivery_name:d[0],delivery_address:d[1],scheduled_at:$("scheduled").value?new Date($("scheduled").value).toISOString():null,priority:$("priority").value,job_client:$("job").value||null,material:$("material").value||null,pallet_qty:$("pallets").value?Number($("pallets").value):null,task_type:$("type").value,instructions:$("notes").value||null};let id=$("id").value;if(id)await db.from("dispatch_tasks").update(payload).eq("id",Number(id));else await db.from("dispatch_tasks").insert({...payload,status:"pending",planning_stage:$("stage").value,sort_order:999});closeTask();await load()}
+function editTask(id){let t=tasks.find(x=>x.id===id);if(!t)return;openTask(t.planning_stage||"ready");$("id").value=id;$("modalTitle").textContent="Edit Task";let pi=LOC.findIndex(x=>x[0]===t.pickup_name),di=LOC.findIndex(x=>x[0]===t.delivery_name);
+if(pi>=0){$("pickup").value=pi}else{$("pickup").value="custom";$("pickupCustomName").value=t.pickup_name||"";$("pickupCustomAddress").value=t.pickup_address||"";toggleCustomLocation("pickup")}
+if(di>=0){$("delivery").value=di}else{$("delivery").value="custom";$("deliveryCustomName").value=t.delivery_name||"";$("deliveryCustomAddress").value=t.delivery_address||"";toggleCustomLocation("delivery")}if(t.scheduled_at){let d=new Date(t.scheduled_at);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());$("scheduled").value=d.toISOString().slice(0,16)}$("priority").value=t.priority||"normal";$("job").value=t.job_client||"";$("material").value=t.material||"";$("pallets").value=t.pallet_qty??"";$("type").value=t.task_type||"other";$("notes").value=t.instructions||""}
+$("form").onsubmit=async e=>{e.preventDefault();let p=locationFromForm("pickup"),d=locationFromForm("delivery");if(!p||!d||!p[0]||!p[1]||!d[0]||!d[1])return alert("Please enter both a location name and full address.");let payload={title:p[0]+" - "+d[0],pickup_name:p[0],pickup_address:p[1],delivery_name:d[0],delivery_address:d[1],scheduled_at:$("scheduled").value?new Date($("scheduled").value).toISOString():null,priority:$("priority").value,job_client:$("job").value||null,material:$("material").value||null,pallet_qty:$("pallets").value?Number($("pallets").value):null,task_type:$("type").value,instructions:$("notes").value||null};let id=$("id").value;if(id)await db.from("dispatch_tasks").update(payload).eq("id",Number(id));else await db.from("dispatch_tasks").insert({...payload,status:"pending",planning_stage:$("stage").value,sort_order:999});closeTask();await load()}
 async function removeTask(id){if(!confirm("Delete this task?"))return;let {error}=await db.from("dispatch_tasks").delete().eq("id",id);if(error)return alert(error.message);await load()}
 $("modal").onclick=e=>{if(e.target===$("modal"))closeTask()};$("historyModal").onclick=e=>{if(e.target===$("historyModal"))closeHistory()};load();setInterval(()=>{if(!$("modal").classList.contains("show"))load()},20000);
+
+let mobileDrag=null,mobileTimer=null,mobileStartX=0,mobileStartY=0,mobileTarget=null;
+function clearMobileTarget(){if(mobileTarget){mobileTarget.classList.remove("mobile-drop-target");mobileTarget=null}}
+function cancelMobileDrag(){clearTimeout(mobileTimer);mobileTimer=null;if(mobileDrag?.el)mobileDrag.el.classList.remove("mobile-dragging");mobileDrag=null}
+function mobileTaskDown(e){
+  if(e.pointerType==="mouse"||e.target.closest("button"))return;
+  let card=e.target.closest(".task"); if(!card)return;
+  let id=Number(card.dataset.id); if(!id)return;
+  mobileStartX=e.clientX;mobileStartY=e.clientY;
+  mobileTimer=setTimeout(()=>{mobileDrag={id,el:card,pointerId:e.pointerId};card.classList.add("mobile-dragging");if(navigator.vibrate)navigator.vibrate(35)},300);
+}
+function mobileTaskMove(e){
+  if(e.pointerType==="mouse")return;
+  if(!mobileDrag){
+    if(mobileTimer&&Math.hypot(e.clientX-mobileStartX,e.clientY-mobileStartY)>12){clearTimeout(mobileTimer);mobileTimer=null}
+    return;
+  }
+  e.preventDefault();
+  clearMobileTarget();
+  let el=document.elementFromPoint(e.clientX,e.clientY);
+  let target=el?.closest("[data-drop-driver], [data-drop-stage]");
+  if(target){mobileTarget=target;target.classList.add("mobile-drop-target")}
+}
+async function mobileTaskUp(e){
+  clearTimeout(mobileTimer);mobileTimer=null;
+  if(!mobileDrag)return;
+  e.preventDefault();
+  let id=mobileDrag.id, target=mobileTarget;
+  mobileDrag.el.classList.remove("mobile-dragging");clearMobileTarget();mobileDrag=null;
+  if(!target)return;
+  if(target.dataset.dropDriver){await moveTask(id,"assigned",Number(target.dataset.dropDriver))}
+  else if(target.dataset.dropStage){await moveTask(id,target.dataset.dropStage,null)}
+}
+document.addEventListener("pointerdown",mobileTaskDown,{passive:true});
+document.addEventListener("pointermove",mobileTaskMove,{passive:false});
+document.addEventListener("pointerup",mobileTaskUp,{passive:false});
+document.addEventListener("pointercancel",cancelMobileDrag,{passive:true});
 </script></body></html>

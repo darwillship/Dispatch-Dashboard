@@ -1,17 +1,14 @@
-SHIFT Dispatch v2.3 — Polished Dashboard
+SHIFT Dispatch v2.4.2 — Mobile Drag Fix
 
-No Supabase SQL changes required.
+No Supabase changes required.
 
-Upload to the root of Dispatch-Dashboard:
-1. index.html — replace existing
-2. shift-logo.png — replace existing
+Replace only index.html in the Dispatch-Dashboard GitHub repository.
 
-Changes:
-- Rebuilt the SHIFT logo asset at much higher resolution with generous bounds so the S/emblem is not cut off.
-- Logo remains centered and blended into the dark header.
-- Added real-data KPI cards for Active Routes, Drivers Assigned, Tasks Today and Completion Rate.
-- More colorful Plan/Ready/Driver task cards.
-- Added driver search.
-- Kept drag-and-drop planning workflow.
-- Kept View History and completed-route history.
-- No fake map/messages were added; this build only surfaces functions backed by the existing app/database.
+Mobile:
+- Touch and hold a task card for about 0.3 seconds.
+- Drag it to Ready, Plan & Prepare, or a driver's card.
+- The destination highlights when the task is over it.
+- Release your finger to move the task.
+
+Desktop drag-and-drop remains unchanged.
+All v2.4.1 features remain included.
