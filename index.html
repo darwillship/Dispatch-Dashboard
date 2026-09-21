@@ -1,0 +1,1412 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SHIFT Dispatch</title><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#080d14;--panel:#0e1621;--panel2:#111c29;--card:#131f2d;--ink:#f5f7fa;--muted:#8fa0b5;--line:#203246;--blue:#0a84ff;--cyan:#00c6ff;--green:#22c55e;--amber:#ffc107;--purple:#986cff;--red:#ef5350;--steel:#a5b0be;--shadow:0 14px 38px rgba(0,0,0,.25)}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#102c4d 0,#080d14 38%,#060a10 100%);color:var(--ink);font:14px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
+header{min-height:128px;background:linear-gradient(180deg,#080d14 0%,rgba(8,13,20,.94) 100%);border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:14px 30px;position:relative}
+
+.shift-brand{justify-self:center;text-align:center;position:relative;z-index:2}.shift-brand img{display:block;width:270px;height:112px;object-fit:contain;filter:drop-shadow(0 0 10px rgba(10,132,255,.16));image-rendering:auto}
+.live{justify-self:end;display:flex;gap:8px;align-items:center;font-size:12px;color:#aeb9c7}.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 12px rgba(34,197,94,.8)}
+main{padding:26px;max-width:1750px;margin:auto}.toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:20px}.toolbar h2{margin:0 0 5px;font-size:24px}.muted{color:var(--muted)}
+button{font:inherit;border:0;cursor:pointer}.btn{padding:11px 15px;border-radius:10px;font-weight:800}.primary{background:linear-gradient(135deg,var(--blue),#0068e8);color:white;box-shadow:0 7px 20px rgba(10,132,255,.24)}.ghost{background:#111c29;border:1px solid var(--line);color:#dbe5ef}
+.board{display:grid;grid-template-columns:300px 300px minmax(500px,1fr);gap:17px;align-items:start}.lane{background:linear-gradient(180deg,#0d1723,#0b131d);border:1px solid var(--line);border-radius:17px;min-height:620px;padding:12px;box-shadow:var(--shadow)}
+.lane:first-child{border-top:3px solid var(--purple)}.lane:nth-child(2){border-top:3px solid var(--blue)}
+.lane-head{display:flex;justify-content:space-between;align-items:center;padding:7px 5px 14px}.lane-title{font-weight:900;letter-spacing:.2px}.count{background:#182638;color:#9fb0c3;border:1px solid #26394f;border-radius:99px;padding:4px 8px;font-size:11px}.dropzone{min-height:520px;border-radius:12px}.dropzone.over,.driver-routes.over{outline:2px dashed var(--cyan);outline-offset:3px;background:#0d2540}
+.task{background:linear-gradient(145deg,#17283b 0%,#111c29 72%);border:1px solid #31506e;border-left:4px solid var(--blue);border-radius:12px;padding:13px;margin-bottom:10px;box-shadow:0 6px 16px rgba(0,0,0,.18);cursor:grab;transition:.16s ease}.task:hover{transform:translateY(-1px);border-color:#36516e}.task.dragging{opacity:.35}.task-top{display:flex;justify-content:space-between;gap:8px}.route{font-weight:850;line-height:1.35;color:#f7f9fc}.grip{color:#63758a}.meta{font-size:11px;color:var(--muted);line-height:1.55;margin-top:7px}.tag{display:inline-block;font-size:10px;font-weight:800;border-radius:99px;padding:4px 7px;background:#172b42;color:#8fc5ff;margin-top:7px}.tag.high{background:#4b1d25;color:#ff9c9c;box-shadow:inset 0 0 0 1px rgba(239,83,80,.25)}.task-actions{display:flex;gap:6px;margin-top:10px}.mini{font-size:11px;padding:6px 8px;border-radius:7px;background:#1b2a3b;color:#aebed0}.mini.danger{color:#ff8e8e}
+.drivers-lane{background:transparent;border:0;padding:0;min-height:620px}.drivers-head{display:flex;justify-content:space-between;align-items:center;margin:5px 2px 13px}.drivers{display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:12px}.driver{background:linear-gradient(180deg,#101b28,#0c151f);border:1px solid var(--line);border-top:3px solid var(--cyan);border-radius:15px;box-shadow:var(--shadow);overflow:hidden;min-height:150px}.driver-head{padding:13px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.driver-name{font-weight:900}.driver-name:before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--blue);margin-right:9px;box-shadow:0 0 10px rgba(10,132,255,.7)}.driver-routes{padding:10px;min-height:90px}.empty{color:#65768a;text-align:center;padding:25px 8px;font-size:12px}.driver .task{background:#132131}.status{font-size:10px;font-weight:850;text-transform:uppercase}.status.in_progress{color:var(--amber)}.status.completed{color:#69df91}.status.assigned{color:#5ba8ff}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:flex-start;justify-content:center;padding:35px 16px;z-index:20;overflow:auto}.modal.show{display:flex}.dialog{width:min(760px,100%);background:#0f1925;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 25px 80px rgba(0,0,0,.55)}.dialog-head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}.dialog form{padding:20px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.full{grid-column:1/-1}label{font-size:12px;font-weight:800;display:block;margin-bottom:6px;color:#c9d4df}input,select,textarea{width:100%;border:1px solid #2b3c50;border-radius:9px;padding:10px 11px;font:inherit;background:#0b141e;color:white}textarea{min-height:80px}.form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.close{background:none;color:white;font-size:22px}
+@media(max-width:1100px){.board{grid-template-columns:1fr 1fr}.drivers-lane{grid-column:1/-1}}@media(max-width:700px){header{grid-template-columns:1fr auto;padding:12px 14px}.shift-brand{justify-self:start}.shift-brand img{width:155px;height:76px}.live{justify-self:end}main{padding:14px}.board{grid-template-columns:1fr}.drivers-lane{grid-column:auto}.drivers{grid-template-columns:1fr}.toolbar{align-items:flex-start;flex-direction:column}.grid{grid-template-columns:1fr}.full{grid-column:auto}}
+
+#brainstorm .task{border-left-color:var(--purple);background:linear-gradient(145deg,rgba(152,108,255,.17),#111c29 62%)}
+#ready .task{border-left-color:var(--blue);background:linear-gradient(145deg,rgba(10,132,255,.18),#111c29 62%)}
+.driver-routes .task{border-left-color:var(--cyan);background:linear-gradient(145deg,rgba(0,198,255,.13),#111c29 62%)}
+.task:has(.status.in_progress){border-left-color:var(--amber)!important;background:linear-gradient(145deg,rgba(255,193,7,.15),#111c29 62%)}
+.task:has(.status.completed){border-left-color:var(--green)!important;background:linear-gradient(145deg,rgba(34,197,94,.16),#101c27 62%);opacity:.88}
+.history-btn{margin-left:8px;background:#111c29;border:1px solid #2b4058;color:#dce7f2}
+.history-modal .dialog{width:min(1000px,100%)}
+.history-list{padding:8px 20px 22px}
+.history-row{display:grid;grid-template-columns:140px 1fr 180px 120px;gap:12px;align-items:center;padding:13px 10px;border-bottom:1px solid var(--line)}
+.history-row:last-child{border-bottom:0}.history-route{font-weight:800}.history-date,.history-driver{color:var(--muted);font-size:12px}
+.history-status{justify-self:end;color:var(--green);font-weight:850;font-size:11px;text-transform:uppercase}
+@media(max-width:700px){.history-row{grid-template-columns:1fr}.history-status{justify-self:start}}
+
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:0 0 18px}
+.metric{min-height:88px;background:linear-gradient(145deg,#101d2a,#0b141e);border:1px solid #20384f;border-radius:13px;padding:16px 18px;display:flex;align-items:center;gap:15px;box-shadow:0 10px 28px rgba(0,0,0,.16)}
+.metric-icon{font-size:28px;filter:saturate(1.2)}.metric b{display:block;font-size:25px;line-height:1;color:#fff}.metric small{display:block;color:#a8b7c8;margin-top:7px}.metric-ring{width:55px;height:55px;border:6px solid var(--blue);border-radius:50%;display:grid;place-items:center;font-weight:900;font-size:12px;box-shadow:0 0 18px rgba(10,132,255,.2)}
+.driver-search{width:165px!important;padding:8px 10px!important;font-size:11px!important}
+.lane-head .lane-title{font-size:14px}.drivers-head{min-height:48px}
+.task{position:relative;overflow:hidden}
+#brainstorm .task{color:#d7c4ff}.task .route,.task .meta,.task-actions{color:initial}.task .route{color:#fff}.task .meta{color:var(--muted)}
+#ready .task{color:#61adff}.driver-routes .task{color:#39d9ff}
+.lane{background:linear-gradient(180deg,rgba(13,23,35,.98),rgba(7,14,22,.98))}
+.driver{background:linear-gradient(180deg,#0f1c29,#09131d)}
+.toolbar{border-left:3px solid var(--blue);padding-left:14px}
+@media(max-width:1000px){.metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.metrics{grid-template-columns:1fr 1fr}.metric{padding:12px}.metric-icon{display:none}.driver-search{width:130px!important}}
+
+.custom-location{margin-top:8px;display:grid;gap:7px}.custom-location.hidden{display:none}
+.custom-location input{border-color:#31506e;background:#0a1723}
+
+.task{touch-action:pan-y;-webkit-user-select:none;user-select:none}
+.task.mobile-dragging{opacity:.82;transform:scale(1.025);box-shadow:0 18px 38px rgba(0,0,0,.48);z-index:999}
+.mobile-drop-target{outline:2px dashed var(--cyan)!important;outline-offset:3px;background:#0d2540!important}
+@media(pointer:coarse){.task{cursor:grab}.grip{font-size:18px;padding:4px 7px}.task-actions button{min-height:38px}}
+
+.save-location{display:flex!important;align-items:center;gap:8px;font-size:11px!important;color:#b9c7d6!important;margin:2px 0 0!important;cursor:pointer}
+.save-location input{width:16px!important;height:16px!important;accent-color:var(--blue)}
+
+.status-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.status-btn{font-size:10px;font-weight:850;padding:6px 9px;border-radius:7px;border:1px solid #2a4056;background:#152334;color:#aebed0}
+.status-btn.active-assigned{border-color:#178cff;color:#76baff;background:rgba(10,132,255,.12)}
+.status-btn.active-progress{border-color:#ffc107;color:#ffd34d;background:rgba(255,193,7,.12)}
+.status-btn.active-completed{border-color:#22c55e;color:#69df91;background:rgba(34,197,94,.12)}
+
+.location-preview{margin-top:7px;padding:8px 10px;border:1px solid #26394c;border-radius:8px;background:#0c1621;color:#91a6ba;font-size:11px;line-height:1.4}
+.location-preview strong{color:#d9e7f5}
+
+.top-driver-search{display:inline-flex;align-items:center;margin-right:8px}
+.top-driver-search input{width:170px;min-width:150px;height:42px;margin:0!important}
+@media(max-width:700px){.top-driver-search input{width:135px;min-width:110px}}
+
+.task-type-badge{display:inline-flex;align-items:center;padding:3px 7px;border-radius:999px;border:1px solid #3a4b5d;background:#182534;color:#c9d7e5;font-size:9px;font-weight:900;letter-spacing:.45px;text-transform:uppercase;white-space:nowrap}
+.task-type-badge.pickup{border-color:#8b5cf6;color:#c4b5fd;background:rgba(139,92,246,.12)}
+.task-type-badge.delivery{border-color:#06b6d4;color:#67e8f9;background:rgba(6,182,212,.12)}
+.task-type-badge.customer-am{border-color:#f59e0b;color:#fcd34d;background:rgba(245,158,11,.12)}
+.task-type-badge.customer-pm{border-color:#a855f7;color:#d8b4fe;background:rgba(168,85,247,.12)}
+.task-type-badge.shuttle{border-color:#64748b;color:#cbd5e1;background:rgba(100,116,139,.12)}
+
+.theme-toggle{height:42px;padding:0 14px;border-radius:9px;border:1px solid #33485d;background:#142131;color:#dce8f4;font-weight:800;cursor:pointer;margin-right:8px}
+body.light-mode{background:#eef3f8!important;color:#17212b!important}
+body.light-mode .app,body.light-mode main{background:#eef3f8!important}
+body.light-mode header{background:#f8fafc!important;border-color:#d5dee8!important}
+body.light-mode .panel,body.light-mode .metric,body.light-mode .driver-card,body.light-mode .lane,body.light-mode .modal-card{background:#ffffff!important;border-color:#ccd8e5!important;box-shadow:0 8px 24px rgba(31,45,61,.08)}
+body.light-mode .task{background:#f8fbfe!important;color:#17212b!important;border-color:#cbd8e5!important}
+body.light-mode .task:has(.status.completed){background:#eefbf2!important}
+body.light-mode .task-title,body.light-mode .driver-name,body.light-mode h1,body.light-mode h2,body.light-mode h3,body.light-mode label{color:#17212b!important}
+body.light-mode .muted,body.light-mode .task-time,body.light-mode .empty,body.light-mode .section-sub{color:#607286!important}
+body.light-mode input,body.light-mode select,body.light-mode textarea{background:#fff!important;color:#17212b!important;border-color:#bfcddd!important}
+body.light-mode .location-preview{background:#f5f8fb!important;border-color:#cbd8e5!important;color:#52677b!important}
+body.light-mode .location-preview strong{color:#17212b!important}
+body.light-mode .theme-toggle,body.light-mode button:not(.primary):not(.danger){background:#fff;color:#26384a;border-color:#bccbd9}
+body.light-mode .topbar,body.light-mode .toolbar{background:transparent!important}
+
+/* v2.5.8 polished light theme */
+body.light-mode{background:#edf2f7!important;color:#17212b!important}
+body.light-mode header{background:#ffffff!important;border-bottom:1px solid #d9e2ec!important}
+body.light-mode .board,body.light-mode .content,body.light-mode .main{background:#edf2f7!important}
+body.light-mode .kpi,body.light-mode .metric,body.light-mode .lane,body.light-mode .panel{background:#ffffff!important;border-color:#d6e0ea!important;color:#17212b!important;box-shadow:0 4px 14px rgba(15,23,42,.06)!important}
+body.light-mode .driver-card{background:#ffffff!important;border:1px solid #cbd8e5!important;border-top:3px solid #22b8f0!important;color:#17212b!important;box-shadow:0 5px 16px rgba(15,23,42,.07)!important}
+body.light-mode .driver-head,body.light-mode .driver-header{background:#f7fafc!important;color:#17212b!important;border-bottom:1px solid #d8e2ec!important}
+body.light-mode .driver-name{color:#17212b!important}
+body.light-mode .task{background:#ffffff!important;color:#17212b!important;border:1px solid #cbd8e5!important;box-shadow:0 2px 8px rgba(15,23,42,.05)!important}
+body.light-mode .task:has(.status.completed){background:#f0faf3!important;border-color:#b9dfc5!important}
+body.light-mode .task-title{color:#17212b!important}
+body.light-mode .task-time,body.light-mode .empty,body.light-mode .muted{color:#66788a!important}
+body.light-mode .dropzone{background:#f7fafc!important;color:#66788a!important}
+body.light-mode .top-driver-search input,body.light-mode input,body.light-mode select,body.light-mode textarea{background:#ffffff!important;color:#17212b!important;border-color:#bccbd9!important}
+body.light-mode .theme-toggle,body.light-mode .toolbar button:not(.primary),body.light-mode .top-actions button:not(.primary){background:#ffffff!important;color:#26384a!important;border-color:#bccbd9!important}
+body.light-mode .status-btn{background:#f7fafc!important;color:#34495e!important;border-color:#c3d0dc!important}
+body.light-mode .status-btn.active-assigned{background:#eaf4ff!important;color:#1268b3!important;border-color:#4ba3ef!important}
+body.light-mode .status-btn.active-progress{background:#fff8df!important;color:#8a6500!important;border-color:#e7bd37!important}
+body.light-mode .status-btn.active-completed{background:#eaf8ef!important;color:#16733a!important;border-color:#56b977!important}
+body.light-mode .location-preview{background:#f7fafc!important;color:#52677b!important;border-color:#cbd8e5!important}
+body.light-mode .modal-card{background:#ffffff!important;color:#17212b!important;border-color:#d1dce7!important}
+body.light-mode .modal-card label{color:#34495e!important}
+body.light-mode .task-type-badge{background:#f3f6f9}
+
+/* v2.5.9 board alignment */
+.driver-section>.section-head:empty,.drivers-section>.section-head:empty{display:none!important}
+.driver-section,.drivers-section{padding-top:0!important;margin-top:0!important}
+.drivers-grid{margin-top:0!important;padding-top:0!important;align-items:start!important}
+
+/* v2.5.9 light mode - fully light driver board */
+body.light-mode .drivers-grid{background:transparent!important}
+body.light-mode .driver-card,
+body.light-mode [data-drop-driver]{
+  background:#ffffff!important;
+  color:#17212b!important;
+  border-color:#cbd8e5!important;
+}
+body.light-mode .driver-card .driver-head,
+body.light-mode .driver-card .driver-header,
+body.light-mode [data-drop-driver] .driver-head,
+body.light-mode [data-drop-driver] .driver-header{
+  background:#f6f9fc!important;
+  color:#17212b!important;
+  border-bottom-color:#d8e2ec!important;
+}
+body.light-mode .driver-card .empty,
+body.light-mode [data-drop-driver] .empty{
+  color:#6b7d8f!important;
+}
+
+/* v2.6.0 — rebuilt light mode */
+.drivers-head{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important}
+.drivers-lane{margin-top:0!important;padding-top:0!important}
+.drivers{margin-top:0!important;padding-top:0!important;align-items:start!important}
+
+/* Keep brand/header dark so the existing SHIFT logo blends correctly */
+body.light-mode header{
+  background:#101923!important;
+  border-bottom:1px solid #243447!important;
+}
+body.light-mode .live{color:#aebed0!important}
+
+/* Light workspace */
+body.light-mode{background:#edf2f7!important;color:#17212b!important}
+body.light-mode main{background:#edf2f7!important}
+body.light-mode .toolbar{background:transparent!important}
+body.light-mode .toolbar .muted{color:#617386!important}
+
+/* Metrics and planning columns */
+body.light-mode .metric,
+body.light-mode .lane{
+  background:#ffffff!important;
+  color:#17212b!important;
+  border-color:#cbd7e3!important;
+  box-shadow:0 4px 14px rgba(15,23,42,.07)!important;
+}
+body.light-mode .lane-head,
+body.light-mode .lane-title{color:#17212b!important}
+body.light-mode .dropzone{background:#f6f9fc!important;color:#6b7d8f!important}
+
+/* Actual driver classes used by SHIFT */
+body.light-mode .driver{
+  background:#ffffff!important;
+  color:#17212b!important;
+  border-color:#c7d5e2!important;
+  border-top-color:#18bde8!important;
+  box-shadow:0 5px 16px rgba(15,23,42,.08)!important;
+}
+body.light-mode .driver-head{
+  background:#f5f8fb!important;
+  color:#17212b!important;
+  border-bottom-color:#d5e0ea!important;
+}
+body.light-mode .driver-head b,
+body.light-mode .driver-head span{color:#17212b!important}
+body.light-mode .driver-routes{background:#ffffff!important}
+
+/* Route cards */
+body.light-mode .task,
+body.light-mode #brainstorm .task,
+body.light-mode #ready .task,
+body.light-mode .driver-routes .task{
+  background:#ffffff!important;
+  color:#17212b!important;
+  border-color:#cbd7e3!important;
+  box-shadow:0 2px 8px rgba(15,23,42,.06)!important;
+}
+body.light-mode .task .route,
+body.light-mode .task .route *{color:#17212b!important}
+body.light-mode .task .meta{color:#66798c!important}
+body.light-mode .task:has(.status.completed){
+  background:#edf9f1!important;
+  border-color:#a9d9b8!important;
+}
+body.light-mode .empty{color:#718397!important}
+
+/* No black action buttons in light mode */
+body.light-mode .mini,
+body.light-mode .status-actions button,
+body.light-mode .btn.ghost,
+body.light-mode .history-btn,
+body.light-mode .theme-toggle{
+  background:#ffffff!important;
+  color:#26384a!important;
+  border:1px solid #b9c9d8!important;
+  box-shadow:none!important;
+}
+body.light-mode .mini:hover,
+body.light-mode .status-actions button:hover,
+body.light-mode .btn.ghost:hover,
+body.light-mode .history-btn:hover{
+  background:#eef4f9!important;
+}
+body.light-mode .mini.danger{
+  background:#fff2f2!important;
+  color:#c43d3d!important;
+  border-color:#efb8b8!important;
+}
+body.light-mode .status-actions button.active,
+body.light-mode .status-actions button[disabled]{
+  background:#e8f3ff!important;
+  color:#1268b3!important;
+  border-color:#68aeea!important;
+}
+
+/* Form controls */
+body.light-mode input,
+body.light-mode select,
+body.light-mode textarea{
+  background:#ffffff!important;
+  color:#17212b!important;
+  border-color:#b9c9d8!important;
+}
+body.light-mode .location-preview{
+  background:#f6f9fc!important;
+  color:#536a80!important;
+  border-color:#cbd7e3!important;
+}
+body.light-mode .location-preview strong{color:#17212b!important}
+
+/* Keep primary action blue */
+body.light-mode .btn.primary{
+  background:linear-gradient(135deg,#1687ff,#3aa7ff)!important;
+  color:#ffffff!important;
+  border-color:transparent!important;
+}
+
+
+@media (pointer:coarse){.task{touch-action:pan-y}}
+.touch-drag-ghost{position:fixed!important;z-index:99999!important;pointer-events:none!important;opacity:.9!important;box-shadow:0 18px 45px rgba(0,0,0,.35)!important}
+.mobile-drop-hot{outline:2px solid #28a8ff!important;outline-offset:2px!important}
+
+.drag-scrolling::before,.drag-scrolling::after{content:"";position:fixed;left:0;right:0;height:58px;z-index:99990;pointer-events:none}
+.drag-scrolling::before{top:0;background:linear-gradient(to bottom,rgba(40,168,255,.12),transparent)}
+.drag-scrolling::after{bottom:0;background:linear-gradient(to top,rgba(40,168,255,.12),transparent)}
+.day-board-bar{display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 14px;padding:8px 10px;border:1px solid var(--line);border-radius:13px;background:var(--panel);box-shadow:var(--shadow)}.day-nav-btn,.day-today-btn{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:9px;height:38px;padding:0 13px;font-weight:800;cursor:pointer}.day-nav-btn{font-size:23px}.day-picker-wrap{position:relative;display:flex;align-items:center;justify-content:center;min-width:220px;height:38px;padding:0 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);font-weight:900;color:var(--text)}.day-picker-wrap input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}@media(max-width:600px){.day-board-bar{position:sticky;top:0;z-index:50}.day-picker-wrap{min-width:0;flex:1}.day-today-btn{padding:0 10px}}
+.shift-wordmark{font-size:38px;font-weight:1000;font-style:italic;letter-spacing:4px;line-height:1;color:#f4f8fc;text-shadow:0 0 18px rgba(38,160,255,.18)}
+.dispatch-context{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.context-dot{opacity:.45}
+.calendar-jump{position:relative;display:flex;align-items:center;justify-content:center;gap:9px;min-width:300px;height:42px;padding:0 16px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);font-weight:900;color:var(--text);cursor:pointer}
+.calendar-jump input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.calendar-icon{font-size:17px;color:#29a8ff}
+.day-board-bar{justify-content:flex-start}
+.top-driver-search{display:none!important}
+@media(max-width:600px){.shift-wordmark{font-size:30px}.calendar-jump{min-width:0;flex:1}.dispatch-context{font-size:11px}}
+.dispatch-date-weather h2{margin:0 0 5px}.weather-dot{color:#20d36b;font-size:10px;margin-right:5px}.dispatch-date-weather .muted{font-weight:700}@media(max-width:600px){.dispatch-date-weather h2{font-size:26px}}
+.calendar-jump{font:inherit}
+.shift-cal-backdrop{display:none;position:fixed;inset:0;z-index:100000;background:rgba(2,8,15,.64);backdrop-filter:blur(5px);align-items:center;justify-content:center;padding:18px}
+.shift-cal-backdrop.open{display:flex}
+.shift-cal{width:min(410px,100%);background:#0e1926;border:1px solid #28435e;border-radius:20px;box-shadow:0 28px 80px rgba(0,0,0,.5);padding:18px;color:#eef6ff}
+.shift-cal-head{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;gap:8px;margin-bottom:14px}
+.shift-cal-head strong{text-align:center;font-size:19px}
+.shift-cal-head button,.shift-cal-foot button{border:1px solid #29445f;background:#142437;color:#eef6ff;border-radius:10px;height:40px;font-weight:850;cursor:pointer}
+.shift-cal-head button{font-size:25px}
+.shift-cal-week,.shift-cal-days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.shift-cal-week{margin-bottom:7px;color:#8396aa;font-size:11px;font-weight:900;text-align:center;text-transform:uppercase}
+.shift-cal-days button{aspect-ratio:1;border:0;border-radius:50%;background:transparent;color:#eef6ff;font-weight:800;cursor:pointer}
+.shift-cal-days button:hover{background:#19314a}
+.shift-cal-days button.outside{color:#52677c}
+.shift-cal-days button.today{box-shadow:inset 0 0 0 1px #168cff;color:#57b5ff}
+.shift-cal-days button.selected{background:#168cff!important;color:white!important;box-shadow:0 7px 22px rgba(22,140,255,.35)}
+.shift-cal-foot{display:flex;justify-content:space-between;gap:10px;margin-top:15px}
+.shift-cal-foot button{padding:0 18px}
+body[data-theme="light"] .shift-cal{background:#fff;color:#17212b;border-color:#cad6e2}
+body[data-theme="light"] .shift-cal-head button,body[data-theme="light"] .shift-cal-foot button{background:#f4f7fa;color:#17212b;border-color:#ccd8e3}
+body[data-theme="light"] .shift-cal-days button{color:#17212b}
+body[data-theme="light"] .shift-cal-days button.outside{color:#a2adba}
+
+/* ===== SHIFT v2.8.0 Premium UI ===== */
+:root{
+ --bg:#071019;--panel:#0c1722;--panel2:#101e2b;--line:#1d3042;
+ --text:#f3f7fb;--muted:#8193a5;--cyan:#2aa7ff;--green:#25d17f;
+ --amber:#ffbd4a;--red:#ff6577;--shadow:0 16px 42px rgba(0,0,0,.22);
+}
+body{
+ background:
+ radial-gradient(circle at 82% -10%,rgba(31,132,221,.10),transparent 28%),
+ radial-gradient(circle at 0 30%,rgba(25,92,146,.07),transparent 25%),
+ var(--bg);
+ letter-spacing:.005em;
+}
+header{border-bottom:1px solid rgba(93,130,163,.16)!important;box-shadow:0 8px 30px rgba(0,0,0,.16)}
+.shift-wordmark{
+ font-size:35px!important;letter-spacing:5px!important;font-weight:950!important;
+ text-shadow:0 0 28px rgba(42,167,255,.16)!important;
+}
+main{max-width:1540px!important}
+.toolbar{
+ background:linear-gradient(180deg,rgba(16,30,43,.86),rgba(10,20,30,.82));
+ border:1px solid rgba(79,111,140,.22);border-radius:17px!important;
+ padding:15px 17px!important;box-shadow:var(--shadow);backdrop-filter:blur(12px);
+ margin-bottom:13px!important;
+}
+.dispatch-date-weather h2{font-size:23px!important;letter-spacing:-.35px}
+.dispatch-date-weather .muted{font-size:12px!important}
+.day-board-bar{
+ width:max-content!important;margin:0 0 12px!important;padding:6px!important;
+ border-radius:12px!important;background:rgba(12,23,34,.72)!important;
+ box-shadow:none!important;
+}
+.calendar-jump,.day-today-btn{
+ height:38px!important;border-radius:9px!important;background:#101e2b!important;
+ border-color:#22384d!important;
+}
+.calendar-jump{min-width:260px!important}
+.btn,.theme-toggle{
+ border-radius:10px!important;min-height:38px;font-weight:800!important;
+ transition:transform .14s ease,border-color .14s ease,background .14s ease;
+}
+.btn:hover,.theme-toggle:hover,.day-today-btn:hover,.calendar-jump:hover{transform:translateY(-1px);border-color:#37617f!important}
+.btn.primary{box-shadow:0 8px 24px rgba(22,140,255,.20)!important}
+.metrics{
+ gap:10px!important;margin:10px 0 14px!important;
+ grid-template-columns:repeat(4,minmax(120px,1fr))!important;
+}
+.metric{
+ min-height:82px!important;padding:13px 15px!important;border-radius:14px!important;
+ background:linear-gradient(180deg,#101d2a,#0c1722)!important;
+ border:1px solid rgba(77,111,141,.24)!important;box-shadow:none!important;
+}
+.metric .num,.metric strong{font-size:25px!important;letter-spacing:-.6px}
+.metric .label,.metric .muted{font-size:10px!important;text-transform:uppercase;letter-spacing:.8px}
+.board{gap:12px!important;align-items:start}
+.lane{
+ border-radius:16px!important;background:linear-gradient(180deg,#0b1722,#09131d)!important;
+ border:1px solid rgba(77,111,141,.22)!important;box-shadow:0 12px 32px rgba(0,0,0,.14)!important;
+ overflow:hidden;
+}
+.lane-head{
+ padding:13px 14px!important;background:rgba(18,34,49,.72)!important;
+ border-bottom:1px solid rgba(77,111,141,.20)!important;
+}
+.lane-title{font-size:13px!important;font-weight:900!important;letter-spacing:.15px}
+.count{border-radius:999px!important;min-width:25px;text-align:center;background:#13263a!important;border-color:#27445e!important}
+.dropzone{padding:10px!important;min-height:135px!important}
+.drivers{gap:10px!important}
+.driver{
+ border-radius:15px!important;background:linear-gradient(180deg,#0e1a26,#09141e)!important;
+ border:1px solid rgba(74,110,141,.25)!important;border-top:2px solid rgba(42,167,255,.72)!important;
+ box-shadow:0 12px 28px rgba(0,0,0,.16)!important;transition:transform .16s ease,border-color .16s ease;
+}
+.driver:hover{border-color:rgba(42,167,255,.46)!important}
+.driver-head{
+ padding:11px 13px!important;background:rgba(16,31,45,.64)!important;
+ border-bottom:1px solid rgba(73,106,135,.19)!important;
+}
+.driver-head strong{font-size:13px!important;letter-spacing:.1px}
+.driver-routes{padding:9px!important;gap:8px!important;min-height:72px!important}
+.task{
+ border-radius:12px!important;background:linear-gradient(180deg,#122232,#0f1d2b)!important;
+ border:1px solid rgba(83,120,151,.28)!important;padding:11px!important;
+ box-shadow:0 7px 18px rgba(0,0,0,.13)!important;
+ transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease;
+}
+.task:hover{transform:translateY(-1px);border-color:rgba(67,163,231,.48)!important;box-shadow:0 10px 24px rgba(0,0,0,.18)!important}
+.task.completed,.task[data-status="completed"]{
+ background:linear-gradient(180deg,rgba(24,95,67,.38),rgba(12,47,36,.42))!important;
+ border-color:rgba(37,209,127,.34)!important;
+}
+.mini{font-size:11px!important;line-height:1.45!important;color:#8fa1b3!important}
+.status-actions{gap:5px!important}
+.status-actions button{border-radius:8px!important;font-size:10px!important;font-weight:850!important}
+.task-type-badge{border-radius:6px!important;font-size:9px!important;letter-spacing:.55px!important}
+.shift-cal{border-radius:18px!important;background:linear-gradient(180deg,#101d2a,#0a1520)!important;border-color:#28445d!important}
+.shift-cal-days button{transition:background .12s ease,transform .12s ease}
+.shift-cal-days button:hover{transform:scale(1.05)}
+.shift-cal-days button.selected{box-shadow:0 7px 20px rgba(22,140,255,.28)!important}
+.weather-dot{filter:drop-shadow(0 0 5px rgba(32,211,107,.55))}
+body[data-theme="light"]{
+ --bg:#eef3f7;--panel:#fff;--panel2:#f6f8fa;--line:#d8e1e8;--text:#16212c;--muted:#6d7c89;
+ background:#eef3f7!important;
+}
+body[data-theme="light"] .toolbar,body[data-theme="light"] .metric,body[data-theme="light"] .lane,body[data-theme="light"] .driver{
+ background:#fff!important;border-color:#dce4eb!important;box-shadow:0 8px 24px rgba(24,45,65,.06)!important;
+}
+body[data-theme="light"] .driver-head,body[data-theme="light"] .lane-head{background:#f7f9fb!important;border-color:#e3e9ee!important}
+body[data-theme="light"] .task{background:#fff!important;border-color:#dce5ec!important;box-shadow:0 5px 14px rgba(24,45,65,.06)!important}
+body[data-theme="light"] .day-board-bar{background:transparent!important}
+body[data-theme="light"] .calendar-jump,body[data-theme="light"] .day-today-btn{background:#fff!important;color:#17212b!important;border-color:#d5e0e8!important}
+@media(max-width:900px){.metrics{grid-template-columns:repeat(2,1fr)!important}.toolbar{gap:12px!important}}
+@media(max-width:600px){
+ main{padding-left:10px!important;padding-right:10px!important}
+ .toolbar{border-radius:14px!important;padding:12px!important}
+ .day-board-bar{width:100%!important}
+ .calendar-jump{min-width:0!important;flex:1}
+ .metrics{gap:8px!important}.metric{min-height:72px!important;padding:11px!important}
+ .driver{border-radius:13px!important}.task{border-radius:11px!important}
+}
+
+
+/* SHIFT v2.8.1 approved brand identity */
+.brand-lockup{display:inline-flex;flex-direction:column;align-items:flex-start;justify-content:center;line-height:1}
+.brand-shift{
+ position:relative;font-family:Arial Black,Arial,sans-serif;font-size:42px;font-weight:1000;
+ font-style:italic;letter-spacing:2px;color:#f7fafc;line-height:.9;
+ text-shadow:0 1px 0 #b8c5d0,0 0 18px rgba(42,167,255,.13);
+}
+.brand-shift::after{
+ content:"";position:absolute;left:3px;top:48%;width:48px;height:3px;border-radius:5px;
+ background:linear-gradient(90deg,transparent,#149cff,#55c2ff,transparent);
+ box-shadow:0 0 10px rgba(20,156,255,.65);transform:skewX(-24deg);
+}
+.brand-tagline{
+ display:flex;align-items:center;gap:8px;margin-top:8px;padding-left:3px;
+ font-size:8px;font-weight:750;letter-spacing:2.2px;color:#aab7c3;white-space:nowrap;
+}
+.brand-tagline b{color:#159cff;font-size:10px;font-weight:700}
+body[data-theme="light"] .brand-shift{color:#f7fafc}
+@media(max-width:600px){
+ .brand-shift{font-size:34px}.brand-tagline{font-size:6px;letter-spacing:1.35px;gap:5px}
+ .brand-shift::after{width:39px;height:2px}
+}
+
+
+/* SHIFT v2.8.2 — actual header brand replacement */
+.shift-brand{
+  justify-self:center!important;
+  text-align:center!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  position:relative!important;
+  z-index:2!important;
+}
+.shift-brand img{display:none!important}
+.shift-new-wordmark{
+  position:relative;
+  font-family:"Arial Black","Helvetica Neue",Arial,sans-serif;
+  font-size:48px;
+  line-height:.88;
+  font-weight:1000;
+  font-style:italic;
+  letter-spacing:2px;
+  color:#f8fbff;
+  text-shadow:0 1px 0 #aebbc8,0 0 22px rgba(20,156,255,.16);
+}
+.shift-new-wordmark::after{
+  content:"";
+  position:absolute;
+  left:5px;
+  top:49%;
+  width:56px;
+  height:3px;
+  border-radius:99px;
+  background:linear-gradient(90deg,transparent,#149cff 22%,#6ed0ff 60%,transparent);
+  box-shadow:0 0 10px rgba(20,156,255,.7);
+  transform:skewX(-25deg);
+}
+.shift-new-tagline{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  margin-top:10px;
+  font-size:8px;
+  line-height:1;
+  font-weight:750;
+  letter-spacing:2.3px;
+  color:#aab7c4;
+  white-space:nowrap;
+}
+.shift-new-tagline b{color:#159cff;font-size:10px}
+@media(max-width:700px){
+  .shift-brand{justify-self:start!important;align-items:flex-start!important}
+  .shift-new-wordmark{font-size:36px}
+  .shift-new-wordmark::after{width:42px;height:2px}
+  .shift-new-tagline{font-size:6px;letter-spacing:1.25px;gap:5px;margin-top:7px}
+}
+
+
+/* SHIFT v2.8.3 — mobile optimization */
+@media(max-width:700px){
+  body{font-size:14px}
+  header{
+    min-height:auto!important;
+    padding:14px 14px 12px!important;
+    grid-template-columns:1fr auto!important;
+    gap:10px!important;
+  }
+  .shift-brand{
+    justify-self:start!important;
+    align-items:flex-start!important;
+    text-align:left!important;
+  }
+  .shift-new-wordmark{font-size:31px!important;letter-spacing:1px!important}
+  .shift-new-wordmark::after{width:37px!important}
+  .shift-new-tagline{
+    font-size:5.5px!important;letter-spacing:1px!important;
+    gap:4px!important;margin-top:6px!important;
+  }
+  .connection,.connection-status,.supabase-status{
+    justify-self:end!important;font-size:10px!important;white-space:nowrap;
+  }
+
+  main{padding:10px!important}
+
+  .day-board-bar{
+    position:static!important;width:100%!important;margin:0 0 9px!important;
+    padding:5px!important;display:grid!important;
+    grid-template-columns:auto minmax(0,1fr)!important;gap:6px!important;
+  }
+  .day-today-btn{height:36px!important;padding:0 12px!important}
+  .calendar-jump{
+    min-width:0!important;width:100%!important;height:36px!important;
+    padding:0 10px!important;font-size:13px!important;
+  }
+
+  .toolbar{
+    padding:11px!important;margin-bottom:9px!important;border-radius:13px!important;
+    display:grid!important;grid-template-columns:1fr!important;gap:9px!important;
+  }
+  .dispatch-date-weather h2{
+    font-size:20px!important;line-height:1.15!important;margin:0 0 5px!important;
+  }
+  .dispatch-date-weather .muted{font-size:11px!important}
+  .toolbar-actions,.actions{
+    display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    gap:6px!important;width:100%!important;
+  }
+  .toolbar-actions .btn,.toolbar-actions .theme-toggle,
+  .actions .btn,.actions .theme-toggle{
+    width:100%!important;min-width:0!important;padding:0 7px!important;
+    height:38px!important;font-size:11px!important;
+  }
+  .toolbar-actions .primary,.actions .primary{
+    grid-column:1/-1!important;height:40px!important;
+  }
+
+  .metrics{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:7px!important;margin:8px 0 10px!important;
+  }
+  .metric{
+    min-height:68px!important;padding:10px 11px!important;border-radius:12px!important;
+  }
+  .metric .num,.metric strong{font-size:22px!important}
+  .metric .label,.metric .muted{font-size:9px!important}
+
+  .board{
+    display:flex!important;flex-direction:column!important;gap:9px!important;
+  }
+  .lane,.drivers-lane{width:100%!important;min-width:0!important}
+  .lane{min-height:0!important;border-radius:13px!important}
+  .lane-head{padding:10px 11px!important}
+  .dropzone{min-height:92px!important;padding:8px!important}
+  .dropzone:empty{min-height:92px!important}
+
+  .drivers{
+    grid-template-columns:1fr!important;
+    gap:8px!important;
+  }
+  .driver{min-height:0!important;border-radius:12px!important}
+  .driver-head{padding:10px 11px!important}
+  .driver-routes{min-height:58px!important;padding:7px!important}
+  .task{padding:10px!important;border-radius:10px!important}
+  .task .route,.task strong{font-size:12px!important}
+  .mini{font-size:10px!important}
+  .status-actions{display:grid!important;grid-template-columns:repeat(3,1fr)!important}
+  .status-actions button{padding:7px 3px!important;font-size:9px!important}
+
+  .shift-cal-backdrop{padding:10px!important;align-items:center!important}
+  .shift-cal{width:100%!important;max-width:390px!important;padding:14px!important}
+  .shift-cal-days,.shift-cal-week{gap:3px!important}
+
+  /* reduce large empty planning buckets on phones */
+  #brainstorm,#ready{min-height:90px!important}
+}
+@media(max-width:390px){
+  .shift-new-wordmark{font-size:28px!important}
+  .shift-new-tagline{font-size:5px!important;letter-spacing:.75px!important}
+  .dispatch-date-weather h2{font-size:18px!important}
+  .toolbar-actions .btn,.toolbar-actions .theme-toggle,
+  .actions .btn,.actions .theme-toggle{font-size:10px!important}
+}
+
+
+/* SHIFT v2.8.4 — center mobile branding */
+@media(max-width:700px){
+  header{
+    position:relative!important;
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:center!important;
+    justify-content:center!important;
+    padding:16px 14px 13px!important;
+    gap:10px!important;
+  }
+  .shift-brand{
+    width:100%!important;
+    justify-self:auto!important;
+    align-self:center!important;
+    align-items:center!important;
+    justify-content:center!important;
+    text-align:center!important;
+    margin:0 auto!important;
+  }
+  .shift-new-wordmark{
+    text-align:center!important;
+    margin:0 auto!important;
+  }
+  .shift-new-tagline{
+    justify-content:center!important;
+    padding-left:0!important;
+    margin-left:auto!important;
+    margin-right:auto!important;
+  }
+  .connection,.connection-status,.supabase-status{
+    justify-self:auto!important;
+    align-self:center!important;
+    margin:0 auto!important;
+    text-align:center!important;
+  }
+}
+
+
+/* SHIFT v2.8.5 — polished high-contrast light mode */
+body[data-theme="light"]{
+  --bg:#edf2f6!important;
+  --panel:#ffffff!important;
+  --panel2:#f7f9fb!important;
+  --line:#d4dee7!important;
+  --text:#101820!important;
+  --muted:#5f6f7e!important;
+  background:linear-gradient(180deg,#f4f7f9 0,#eaf0f4 100%)!important;
+  color:#101820!important;
+}
+body[data-theme="light"] main{color:#101820!important}
+
+/* Keep premium dark brand header for contrast */
+body[data-theme="light"] header{
+  background:#071019!important;
+  border-bottom-color:#1b2d3d!important;
+}
+body[data-theme="light"] .shift-new-wordmark{color:#fff!important}
+body[data-theme="light"] .shift-new-tagline{color:#aebbc7!important}
+body[data-theme="light"] .connection,
+body[data-theme="light"] .connection-status,
+body[data-theme="light"] .supabase-status{color:#c1ccd6!important}
+
+/* Date and toolbar */
+body[data-theme="light"] .day-board-bar,
+body[data-theme="light"] .toolbar{
+  background:#fff!important;
+  border:1px solid #d4dee7!important;
+  box-shadow:0 6px 20px rgba(30,55,75,.07)!important;
+}
+body[data-theme="light"] .dispatch-date-weather h2{color:#101820!important}
+body[data-theme="light"] .dispatch-date-weather .muted{color:#536574!important}
+body[data-theme="light"] .calendar-jump,
+body[data-theme="light"] .day-today-btn,
+body[data-theme="light"] .btn.ghost,
+body[data-theme="light"] .history-btn,
+body[data-theme="light"] .theme-toggle{
+  background:#fff!important;
+  color:#18232d!important;
+  border:1px solid #c9d6e0!important;
+  box-shadow:0 2px 7px rgba(30,55,75,.04)!important;
+}
+body[data-theme="light"] .btn.primary{
+  color:#fff!important;
+  background:linear-gradient(135deg,#168cff,#0878e8)!important;
+  border-color:#168cff!important;
+}
+
+/* Metrics — explicit contrast so numbers never inherit pale colors */
+body[data-theme="light"] .metric{
+  background:#fff!important;
+  border:1px solid #d2dde6!important;
+  box-shadow:0 5px 18px rgba(32,55,75,.06)!important;
+}
+body[data-theme="light"] .metric .num,
+body[data-theme="light"] .metric strong,
+body[data-theme="light"] .metric > div:first-child,
+body[data-theme="light"] #activeRoutes,
+body[data-theme="light"] #driversAssigned,
+body[data-theme="light"] #tasksToday{
+  color:#111a22!important;
+  opacity:1!important;
+  text-shadow:none!important;
+}
+body[data-theme="light"] .metric .label,
+body[data-theme="light"] .metric .muted{
+  color:#586a79!important;
+  opacity:1!important;
+}
+body[data-theme="light"] .metric svg,
+body[data-theme="light"] .metric .metric-icon{opacity:1!important}
+body[data-theme="light"] .progress-ring,
+body[data-theme="light"] .completion-ring{filter:none!important}
+body[data-theme="light"] .completion-rate,
+body[data-theme="light"] .completion-rate *,
+body[data-theme="light"] #completionRate{
+  color:#111a22!important;
+  opacity:1!important;
+}
+
+/* Planning + driver board */
+body[data-theme="light"] .lane,
+body[data-theme="light"] .driver{
+  background:#fff!important;
+  border-color:#d4dee7!important;
+  box-shadow:0 5px 18px rgba(31,54,73,.055)!important;
+}
+body[data-theme="light"] .lane-head,
+body[data-theme="light"] .driver-head{
+  background:#f4f7f9!important;
+  border-bottom-color:#dce5ec!important;
+}
+body[data-theme="light"] .lane-title,
+body[data-theme="light"] .driver-head strong{color:#17212b!important}
+body[data-theme="light"] .count{
+  background:#eaf2f8!important;
+  border-color:#c9d9e5!important;
+  color:#42596c!important;
+}
+body[data-theme="light"] .dropzone{color:#657787!important}
+body[data-theme="light"] .dropzone .muted{color:#718290!important}
+
+/* Route cards */
+body[data-theme="light"] .task{
+  background:#fff!important;
+  color:#17212b!important;
+  border:1px solid #d6e1e9!important;
+  box-shadow:0 4px 13px rgba(32,55,75,.055)!important;
+}
+body[data-theme="light"] .task:hover{border-color:#79baf0!important}
+body[data-theme="light"] .task strong,
+body[data-theme="light"] .task .route{color:#111b24!important}
+body[data-theme="light"] .task .mini{color:#607383!important}
+body[data-theme="light"] .task.completed,
+body[data-theme="light"] .task[data-status="completed"]{
+  background:#eefaf4!important;
+  border-color:#9edbbd!important;
+}
+body[data-theme="light"] .status-actions button{
+  background:#f5f8fa!important;
+  color:#263642!important;
+  border-color:#ccd9e2!important;
+}
+body[data-theme="light"] .status-actions button:hover{background:#eaf2f8!important}
+
+/* Calendar */
+body[data-theme="light"] .shift-cal{
+  background:#fff!important;
+  color:#17212b!important;
+  border-color:#cad7e1!important;
+  box-shadow:0 24px 70px rgba(25,48,66,.18)!important;
+}
+body[data-theme="light"] .shift-cal-week{color:#637584!important}
+body[data-theme="light"] .shift-cal-days button{color:#17212b!important}
+body[data-theme="light"] .shift-cal-days button.outside{color:#a0adb8!important}
+
+/* Mobile light mode gets cleaner cards and stronger typography */
+@media(max-width:700px){
+ body[data-theme="light"] .metric .num,
+ body[data-theme="light"] .metric strong{font-weight:900!important}
+ body[data-theme="light"] .metric .label,
+ body[data-theme="light"] .metric .muted{font-weight:650!important}
+ body[data-theme="light"] .toolbar,
+ body[data-theme="light"] .metric,
+ body[data-theme="light"] .lane,
+ body[data-theme="light"] .driver{border-color:#cfdbe4!important}
+}
+
+
+/* SHIFT v2.8.6 — light mode fixes using the app's ACTUAL .light-mode class */
+body.light-mode .metric b,
+body.light-mode #mActive,
+body.light-mode #mDrivers,
+body.light-mode #mTasks{
+  color:#111820!important;
+  opacity:1!important;
+  visibility:visible!important;
+  -webkit-text-fill-color:#111820!important;
+  text-shadow:none!important;
+}
+body.light-mode .metric small{
+  color:#536779!important;
+  opacity:1!important;
+  -webkit-text-fill-color:#536779!important;
+}
+body.light-mode .metric-ring,
+body.light-mode #mRate{
+  color:#111820!important;
+  -webkit-text-fill-color:#111820!important;
+  background:#fff!important;
+}
+
+/* Fix top date selector, which was still inheriting dark-mode colors */
+body.light-mode .day-board-bar{
+  background:#ffffff!important;
+  border-color:#ccd8e3!important;
+  box-shadow:0 5px 16px rgba(31,50,68,.07)!important;
+}
+body.light-mode .day-today-btn,
+body.light-mode .calendar-jump{
+  background:#f8fafc!important;
+  color:#17212b!important;
+  border-color:#c8d5df!important;
+}
+body.light-mode #boardDateLabel{color:#17212b!important}
+body.light-mode .calendar-icon{color:#168cff!important}
+
+/* Remove the dark gray planning headers visible in the screenshot */
+body.light-mode .lane-head{
+  background:#f3f7fa!important;
+  border-bottom:1px solid #d9e3eb!important;
+}
+body.light-mode .lane-title{
+  color:#17212b!important;
+  -webkit-text-fill-color:#17212b!important;
+}
+body.light-mode .count{
+  background:#e9f2f8!important;
+  color:#3f5669!important;
+  border-color:#c7d9e6!important;
+}
+body.light-mode .dropzone{
+  background:#f8fafc!important;
+  color:#65798a!important;
+}
+body.light-mode .empty,
+body.light-mode .dropzone .muted{color:#708394!important}
+
+/* Actual driver classes */
+body.light-mode .driver{
+  background:#fff!important;
+  color:#17212b!important;
+  border-color:#cedbe5!important;
+  border-top-color:#22a8ed!important;
+  box-shadow:0 5px 16px rgba(30,50,68,.06)!important;
+}
+body.light-mode .driver-head{
+  background:#f4f8fa!important;
+  border-bottom-color:#d9e3eb!important;
+}
+body.light-mode .driver-head strong{color:#17212b!important}
+body.light-mode .driver-routes{background:#fff!important}
+
+/* Actual task styling */
+body.light-mode .task{
+  background:#fff!important;
+  color:#17212b!important;
+  border-color:#d2dee7!important;
+}
+body.light-mode .task strong,
+body.light-mode .task .route{color:#111a22!important}
+body.light-mode .mini{color:#607485!important}
+body.light-mode .task.completed,
+body.light-mode .task[data-status="completed"]{
+  background:#effaf4!important;
+  border-color:#a8d9bf!important;
+}
+
+/* Light toolbar polish */
+body.light-mode .toolbar{
+  background:#fff!important;
+  border-color:#d0dce6!important;
+  box-shadow:0 6px 18px rgba(30,50,68,.065)!important;
+}
+body.light-mode .dispatch-date-weather h2{color:#111820!important}
+body.light-mode .dispatch-date-weather .muted{color:#536779!important}
+
+/* Keep the brand header intentionally dark */
+body.light-mode header{
+  background:#071019!important;
+  border-bottom-color:#1c3042!important;
+}
+body.light-mode .shift-new-wordmark{color:#fff!important;-webkit-text-fill-color:#fff!important}
+body.light-mode .shift-new-tagline{color:#aab7c4!important}
+body.light-mode .connection,
+body.light-mode .connection-status,
+body.light-mode .supabase-status{color:#c4ced7!important}
+
+@media(max-width:700px){
+  body.light-mode .metric b,
+  body.light-mode #mActive,
+  body.light-mode #mDrivers,
+  body.light-mode #mTasks{font-weight:900!important;font-size:25px!important}
+  body.light-mode .metric small{font-weight:650!important}
+}
+
+
+/* v2.9.0 Team Reminders */
+.reminder-badge{display:inline-flex;min-width:18px;height:18px;padding:0 5px;align-items:center;justify-content:center;border-radius:999px;background:#168eea;color:#fff;font-size:10px;font-weight:900;margin-left:4px}
+.reminders-dialog{max-width:860px!important}
+.reminder-form{padding:16px;border-bottom:1px solid var(--line)}
+.reminder-entry{display:grid;grid-template-columns:minmax(220px,1fr) 190px 110px auto;gap:9px}
+.reminder-entry input,.reminder-entry select{width:100%;background:#0c1621;color:#eaf3fb;border:1px solid var(--line);border-radius:9px;padding:10px 11px}
+.reminder-filters{display:flex;gap:7px;padding:12px 16px 4px}
+.reminder-filter.active{background:#168eea;color:#fff;border-color:#168eea}
+.reminder-list{padding:10px 16px 18px;max-height:58vh;overflow:auto}
+.reminder-group-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8395a5;font-weight:900;margin:14px 2px 7px}
+.reminder-item{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:start;padding:12px;border:1px solid var(--line);background:#0e1924;border-radius:11px;margin-bottom:8px}
+.reminder-item.high{border-left:3px solid #ffb020}
+.reminder-item.done{opacity:.68}
+.reminder-check{width:20px;height:20px;margin-top:2px;accent-color:#168eea}
+.reminder-copy strong{display:block;color:#eef6fd;font-size:14px;line-height:1.35}
+.reminder-copy small{display:block;color:#8194a6;margin-top:4px}
+.reminder-item.done .reminder-copy strong{text-decoration:line-through}
+.reminder-actions{display:flex;gap:5px}
+body.light-mode .reminder-entry input,body.light-mode .reminder-entry select{background:#fff!important;color:#17212b!important;border-color:#cedbe5!important}
+body.light-mode .reminder-item{background:#fff!important;color:#17212b!important;border-color:#d2dee7!important}
+body.light-mode .reminder-copy strong{color:#17212b!important}
+body.light-mode .reminder-copy small{color:#607485!important}
+@media(max-width:700px){
+ .reminder-entry{grid-template-columns:1fr 1fr}
+ .reminder-entry #reminderText{grid-column:1/-1}
+ .reminder-entry .btn{width:100%}
+ .reminder-item{grid-template-columns:auto 1fr}
+ .reminder-actions{grid-column:2;justify-content:flex-end}
+}
+
+/* v3.0.0 route card hierarchy + driver schedule */
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1) brightness(1.8);opacity:.9;cursor:pointer}
+body.light-mode input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+body.light-mode input[type="date"]::-webkit-calendar-picker-indicator{filter:none;opacity:.75}
+.route-card-clean{padding:12px!important}
+.route-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+.route-type{display:inline-flex;align-items:center;border-radius:7px;padding:4px 8px;font-size:10px;font-weight:950;letter-spacing:.055em}
+.route-type.pickup{background:rgba(40,185,255,.14);color:#65cfff;border:1px solid rgba(40,185,255,.32)}
+.route-type.delivery{background:rgba(105,223,145,.13);color:#75e79a;border:1px solid rgba(105,223,145,.28)}
+.route-type.shuttle{background:rgba(175,121,255,.15);color:#c49aff;border:1px solid rgba(175,121,255,.3)}
+.route-type.other{background:rgba(150,165,180,.12);color:#b8c5d0;border:1px solid rgba(150,165,180,.25)}
+.route-card-clean .route{font-size:14px!important;line-height:1.25;margin-bottom:5px}
+.route-card-clean .meta{font-size:11px!important}
+.route-job{font-size:11px;color:#8ea2b4;margin-top:4px}
+.route-flags{display:flex;gap:6px;align-items:center;min-height:20px;margin-top:7px}
+.route-priority{font-size:9px;font-weight:950;color:#ffbc36;background:rgba(255,176,32,.12);border:1px solid rgba(255,176,32,.28);padding:3px 6px;border-radius:6px}
+.route-status{font-size:9px;font-weight:950;text-transform:uppercase;padding:3px 6px;border-radius:6px}
+.route-status.assigned{color:#66b1ff;background:rgba(10,132,255,.12)}
+.route-status.in_progress{color:#ffc23d;background:rgba(255,176,32,.12)}
+.route-status.completed{color:#75e79a;background:rgba(105,223,145,.12)}
+.route-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
+.route-footer .task-actions{margin:0!important}
+.status-next{border:1px solid #31516a;background:#15293a;color:#dcecf8;border-radius:8px;padding:6px 9px;font-size:10px;font-weight:900;cursor:pointer}
+.status-next.start{border-color:#287fbe;color:#75caff}
+.status-next.complete{border-color:#368c54;color:#7be49b}
+.route-done{font-size:10px;font-weight:900;color:#75e79a}
+.driver-availability{font-size:10px;margin-top:3px;color:#7e94a7;font-weight:700}
+.driver-availability.working{color:#6edc93}.driver-availability.messenger{color:#65cfff}.driver-availability.pto,.driver-availability.off,.driver-availability.call_off{color:#9aa8b5}
+.driver-unavailable{opacity:.67}
+.schedule-dialog{max-width:1000px!important}
+.schedule-toolbar{display:flex;gap:8px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.schedule-toolbar input{background:#0c1621;color:#eaf3fb;border:1px solid var(--line);border-radius:9px;padding:9px 10px}
+.schedule-list{padding:14px 16px 18px;max-height:62vh;overflow:auto}
+.schedule-row{display:grid;grid-template-columns:minmax(145px,1.2fr) 120px 105px 105px minmax(160px,1.5fr);gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(120,145,165,.15)}
+.schedule-driver{font-weight:850}
+.schedule-row select,.schedule-row input{width:100%;background:#0c1621;color:#eaf3fb;border:1px solid var(--line);border-radius:8px;padding:8px}
+body.light-mode .route-card-clean .route{color:#17212b!important}
+body.light-mode .route-job{color:#64798a!important}
+body.light-mode .schedule-toolbar input,body.light-mode .schedule-row select,body.light-mode .schedule-row input{background:#fff!important;color:#17212b!important;border-color:#cedbe5!important}
+@media(max-width:700px){
+ .route-footer{align-items:flex-end}
+ .schedule-row{grid-template-columns:1fr 1fr}
+ .schedule-driver{grid-column:1/-1}
+ .schedule-note{grid-column:1/-1}
+ .schedule-toolbar .btn.primary{width:100%}
+}
+</style></head>
+<body><header><div></div><div class="shift-brand">
+  <div class="shift-new-wordmark">SHIFT</div>
+  <div class="shift-new-tagline">
+    <span>PLAN</span><b>/</b><span>ASSIGN</span><b>/</b><span>MOVE</span><b>/</b><span>COMPLETE</span>
+  </div>
+</div><div class="live"><i class="dot"></i><span id="conn">Connecting…</span></div>
+</header>
+<main><section class="day-board-bar">
+  <button class="day-today-btn" type="button" onclick="todayBoard()">Today</button>
+  <button class="calendar-jump" type="button" onclick="openShiftCalendar()" title="Select any date">
+  <span class="calendar-icon">▣</span><span id="boardDateLabel">Today</span>
+</button>
+</section><div class="toolbar"><div class="dispatch-date-weather"><h2 id="headerDateText"></h2><div class="muted" id="headerWeather"><span class="weather-dot">●</span> Loading Chicago weather…</div></div><div><button id="themeToggle" class="theme-toggle" type="button" onclick="toggleTheme()" title="Switch light/dark mode">☀ Light</button><button class="btn ghost" onclick="load()">Refresh</button><button class="btn ghost" onclick="openReminders()">Reminders <span id="reminderBadge" class="reminder-badge">0</span></button><button class="btn ghost" onclick="openDriverSchedule()">Driver Schedule</button><button class="btn history-btn" onclick="openHistory()">View History</button> <button class="btn primary" onclick="openTask('brainstorm')">+ Quick Task</button></div></div>
+<section class="metrics" id="metrics">
+<div class="metric"><span class="metric-icon">🚚</span><div><b id="mActive">0</b><small>Active Routes</small></div></div>
+<div class="metric"><span class="metric-icon">👥</span><div><b id="mDrivers">0</b><small>Drivers Assigned</small></div></div>
+<div class="metric"><span class="metric-icon">☑</span><div><b id="mTasks">0</b><small>Tasks Today</small></div></div>
+<div class="metric"><span class="metric-ring" id="mRate">0%</span><div><small>Completion Rate</small></div></div>
+</section><div class="board">
+<section class="lane"><div class="lane-head"><span class="lane-title">💡 Plan & Prepare</span><span class="count" id="brainCount">0</span></div><div class="dropzone" id="brainstorm" data-drop-stage="brainstorm" data-stage="brainstorm"></div></section>
+<section class="lane"><div class="lane-head"><span class="lane-title">✓ Ready to Assign</span><span class="count" id="readyCount">0</span></div><div class="dropzone" id="ready" data-drop-stage="ready" data-stage="ready"></div></section>
+<section class="drivers-lane"><div class="drivers" id="drivers"></div></section>
+</div></main>
+<div class="modal history-modal" id="historyModal"><div class="dialog"><div class="dialog-head"><div><b>Route History</b><div class="muted" style="font-size:12px;margin-top:3px">Completed routes</div></div><button class="close" onclick="closeHistory()">×</button></div><div class="history-list" id="historyList"></div></div></div>
+<div class="modal schedule-modal" id="scheduleModal"><div class="dialog schedule-dialog">
+<div class="dialog-head"><div><b>Driver Schedule</b><div class="muted" style="font-size:12px;margin-top:3px">Build daily availability for the dispatch board.</div></div><button class="close" onclick="closeDriverSchedule()">×</button></div>
+<div class="schedule-toolbar"><button class="btn ghost" type="button" onclick="changeScheduleDate(-1)">‹</button><input id="scheduleDate" type="date" onchange="loadDriverSchedule()"><button class="btn ghost" type="button" onclick="changeScheduleDate(1)">›</button><button class="btn ghost" type="button" onclick="copyPreviousSchedule()">Copy Previous Day</button><button class="btn primary" type="button" onclick="saveDriverSchedule()">Save Schedule</button></div>
+<div id="scheduleList" class="schedule-list"></div>
+</div></div>
+<div class="modal reminders-modal" id="remindersModal"><div class="dialog reminders-dialog">
+<div class="dialog-head"><div><b>Team Reminders</b><div class="muted" style="font-size:12px;margin-top:3px">Shared notes for the shipping team.</div></div><button class="close" onclick="closeReminders()">×</button></div>
+<form id="reminderForm" class="reminder-form">
+<input type="hidden" id="reminderId">
+<div class="reminder-entry"><input id="reminderText" maxlength="240" placeholder="Jot down a reminder…" required><input id="reminderDue" type="datetime-local"><select id="reminderPriority"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select><button class="btn primary" type="submit">Add Reminder</button></div>
+</form>
+<div class="reminder-filters"><button type="button" class="mini reminder-filter active" data-filter="open" onclick="setReminderFilter('open',this)">Open</button><button type="button" class="mini reminder-filter" data-filter="completed" onclick="setReminderFilter('completed',this)">Completed</button></div>
+<div id="reminderList" class="reminder-list"><div class="empty">Loading reminders…</div></div>
+</div></div>
+<div class="modal" id="modal"><div class="dialog"><div class="dialog-head"><div><b id="modalTitle">New Task</b><div class="muted" style="font-size:12px;margin-top:3px">Add what you know now. Finish details later.</div></div><button class="close" onclick="closeTask()">×</button></div>
+<form id="form"><input type="hidden" id="id"><input type="hidden" id="stage"><div class="grid">
+<div><label>Pickup *</label><select id="pickup" required onchange="toggleCustomLocation('pickup')"></select>
+<div id="pickupCustom" class="custom-location hidden"><input id="pickupCustomName" placeholder="Customer / location name"><input id="pickupCustomAddress" placeholder="Full pickup address"><label class="save-location"><input type="checkbox" id="pickupSave"> Save this location for future routes</label></div><div id="pickupPreview" class="location-preview">Select a pickup location to see the address.</div></div>
+<div><label>Delivery *</label><select id="delivery" required onchange="toggleCustomLocation('delivery')"></select>
+<div id="deliveryCustom" class="custom-location hidden"><input id="deliveryCustomName" placeholder="Customer / location name"><input id="deliveryCustomAddress" placeholder="Full delivery address"><label class="save-location"><input type="checkbox" id="deliverySave"> Save this location for future routes</label></div><div id="deliveryPreview" class="location-preview">Select a delivery location to see the address.</div></div>
+<div><label>Scheduled</label><input id="scheduled" type="datetime-local"></div><div><label>Priority</label><select id="priority"><option>normal</option><option>high</option><option>low</option></select></div>
+<div><label>Client / Job</label><input id="job"></div><div><label>Material</label><input id="material"></div>
+<div><label>Pallets</label><input id="pallets" type="number" min="0"></div><div><label>Task Type</label><select id="type"><option>shuttle</option><option>pickup</option><option>delivery</option><option>other</option></select></div>
+<div class="full"><label>Instructions</label><textarea id="notes"></textarea></div></div>
+<div class="form-actions"><button type="button" class="btn ghost" onclick="closeTask()">Cancel</button><button class="btn primary">Save Task</button></div></form></div></div>
+<script>
+const SUPABASE_URL="https://hqhfstosclasgwgxubip.supabase.co";
+const SUPABASE_KEY="sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk";
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const LOC=[["ALG","1053 N Schmidt Rd, Romeoville, IL 60446"],["ENRU","1000 Windham Pkwy, Bolingbrook, IL 60490"],["Darwill Hillside","11900 Roosevelt Rd, Hillside, IL 60162"],["Darwill McCook","8701 47th St Ste C, McCook, IL 60525"],["South Suburban Post Office","6801 W 73rd St, Bedford Park, IL 60499"],["Fox Valley Post Office","3900 Gabrielle Ln, Aurora, IL 60598"],["Carol Stream Post Office","550 E Fullerton Ave, Carol Stream, IL 60188"],["Worth Post Office","11114 S Harlem Ave, Worth, IL 60482"],["Bolingbrook Post Office","105 Canterbury Ln, Bolingbrook, IL 60440"],["Darwill Oakbrook Tower Terrace","1 Tower Ln, Oakbrook Terrace, IL 60181"],["Envelopes Only","2000 S Park Ave, Streamwood, IL 60107"],["Federal Envelope","608 Country Club Dr, Bensenville, IL 60106"],["Universal Laminating","910 Carlow Dr Ste A, Bolingbrook, IL 60490"],["Platinum Converting","1560 W Stearns Rd, Bartlett, IL 60103"],["Victor Envelope","301 Arthur Ct, Bensenville, IL 60106"],["Supremex Naperville","1500 Shore Rd, Naperville, IL 60563"],["Supremex Chicago","4114 S Peoria St, Chicago, IL 60609"],["MSI","1501 Morse Ave, Elk Grove Village, IL 60007"],["Palatine Post Office","1300 E Northwest Hwy, Palatine, IL 60095"]];
+let tasks=[],allTasks=[],drivers=[],savedLocations=[],driverSchedule=[],dragId=null;
+const $=id=>document.getElementById(id), esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+function ymd(v){let d=new Date(v);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")}
+function fmt(v){return v?new Date(v).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"Time TBD"}
+function options(){let built=LOC.map((x,i)=>`<option value="builtin:${i}">${x[0]}</option>`).join("");let saved=savedLocations.map(x=>`<option value="saved:${x.id}">${esc(x.name)}</option>`).join("");return '<option value="">Select…</option>'+built+(saved?'<optgroup label="Saved Customers">'+saved+'</optgroup>':'')+'<option value="custom">+ Type a new location…</option>'}
+function taskCard(t){
+ let st=(t.status||"pending").toLowerCase().replace(" ","_");
+ let raw=(t.task_type||"other").toLowerCase();
+ let typeKey=raw.includes("pickup")?"pickup":raw.includes("delivery")?"delivery":raw.includes("shuttle")?"shuttle":"other";
+ let typeLabel=typeKey==="pickup"?"↑ PICKUP":typeKey==="delivery"?"↓ DELIVERY":typeKey==="shuttle"?"↔ SHUTTLE":"• OTHER";
+ let high=t.priority==="high"?'<span class="route-priority">HIGH</span>':"";
+ let status=t.assigned_driver_id?`<span class="route-status ${st}">${esc((t.status||"assigned").replace("_"," "))}</span>`:"";
+ return `<article class="task route-card-clean" draggable="true" data-id="${t.id}">
+ <div class="route-card-head"><span class="route-type ${typeKey}">${typeLabel}</span><span class="grip">⋮⋮</span></div>
+ <div class="route">${esc(t.pickup_name)} → ${esc(t.delivery_name)}</div>
+ <div class="meta">${fmt(t.scheduled_at)}${t.pallet_qty!=null?" · "+t.pallet_qty+" pallets":""}</div>
+ ${t.job_client?`<div class="route-job">${esc(t.job_client)}</div>`:""}
+ <div class="route-flags">${high}${status}</div>
+ <div class="route-footer"><div class="task-actions"><button class="mini" onclick="event.stopPropagation();editTask(${t.id})">Edit</button><button class="mini danger" onclick="event.stopPropagation();removeTask(${t.id})">Delete</button></div>${compactStatusControl(t)}</div>
+ </article>`;
+}
+function updateMetrics(){let today=allTasks.filter(t=>!t.scheduled_at||ymd(t.scheduled_at)===ymd(new Date()));let completed=today.filter(t=>t.status==="completed").length;let active=today.filter(t=>t.assigned_driver_id&&t.status!=="completed").length;let assigned=new Set(today.filter(t=>t.assigned_driver_id&&t.status!=="completed").map(t=>String(t.assigned_driver_id))).size;$("mActive").textContent=active;$("mDrivers").textContent=assigned;$("mTasks").textContent=today.length;$("mRate").textContent=today.length?Math.round(completed/today.length*100)+"%":"0%"}
+function taskTypeBadge(t){
+ let raw=(t.task_type||"").trim(); if(!raw)return "";
+ let key=raw.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+ let label=raw.replace(/_/g," ").toUpperCase();
+ return `<span class="task-type-badge ${key}">${esc(label)}</span>`;
+}
+function statusControls(t){return compactStatusControl(t)}
+function compactStatusControl(t){
+ if(!t.assigned_driver_id)return "";
+ if(t.status==="completed")return `<span class="route-done">✓ Complete</span>`;
+ if(t.status==="in_progress")return `<button class="status-next complete" onclick="event.stopPropagation();setTaskStatus(${t.id},'completed')">✓ Complete</button>`;
+ return `<button class="status-next start" onclick="event.stopPropagation();setTaskStatus(${t.id},'in_progress')">Start Route</button>`;
+}
+async function setTaskStatus(id,status){
+ let patch={status};
+ if(status==="completed")patch.completed_at=new Date().toISOString();
+ else patch.completed_at=null;
+ let r=await db.from("dispatch_tasks").update(patch).eq("id",id);
+ if(r.error){console.error(r.error);alert("Could not update route status.");return}
+ await load();
+}
+function render(){
+ let brain=tasks.filter(t=>!t.assigned_driver_id&&(t.planning_stage||"ready")==="brainstorm"),ready=tasks.filter(t=>!t.assigned_driver_id&&(t.planning_stage||"ready")!=="brainstorm");
+ $("brainstorm").innerHTML=brain.length?brain.map(taskCard).join(""):'<div class="empty">Drop ideas here<br>Details can be incomplete.</div>';
+ $("ready").innerHTML=ready.length?ready.map(taskCard).join(""):'<div class="empty">Drag planned work here<br>when it is ready to dispatch.</div>';
+ $("brainCount").textContent=brain.length;$("readyCount").textContent=ready.length;
+ $("drivers").innerHTML=drivers.sort((a,b)=>{
+ const at=tasks.filter(t=>Number(t.assigned_driver_id)===Number(a.id)),bt=tasks.filter(t=>Number(t.assigned_driver_id)===Number(b.id));
+ const rank=x=>x.some(t=>t.status==="in_progress")?0:x.some(t=>t.status==="assigned")?1:x.some(t=>t.status==="completed")?2:3;
+ const avail=x=>{let s=driverSchedule.find(q=>Number(q.driver_id)===Number(x.id));if(!s)return 1;return ["working","messenger"].includes(s.status)?0:2};
+ const aa=avail(a),ba=avail(b);if(aa!==ba)return aa-ba;
+ const ar=rank(at),br=rank(bt);return ar!==br?ar-br:(a.name||"").localeCompare(b.name||"");
+}).map(d=>{let mine=tasks.filter(t=>Number(t.assigned_driver_id)===Number(d.id)).sort((a,b)=>{
+ let ac=a.status==="completed"?1:0,bc=b.status==="completed"?1:0;
+ if(ac!==bc)return ac-bc;
+ if(ac&&bc)return new Date(b.completed_at||0)-new Date(a.completed_at||0);
+ return (a.sort_order||0)-(b.sort_order||0)
+});let sch=driverSchedule.find(x=>Number(x.driver_id)===Number(d.id));let schText=sch?`${scheduleStatusLabel(sch.status)}${sch.start_time?" · "+formatScheduleTime(sch.start_time):""}${sch.end_time?"–"+formatScheduleTime(sch.end_time):""}`:"Not scheduled";let unavailable=sch&&["off","pto","call_off"].includes(sch.status);return `<section class="driver ${unavailable?"driver-unavailable":""}"><div class="driver-head"><div><span class="driver-name">${esc(d.name)}</span><div class="driver-availability ${esc(sch?.status||"unscheduled")}">${esc(schText)}</div></div><span class="count">${mine.length}</span></div><div class="driver-routes" data-driver="${d.id}" data-drop-driver="${d.id}">${mine.length?mine.map(taskCard).join(""):'<div class="empty">'+(unavailable?"Unavailable":"Drop route here")+'</div>'}</div></section>`}).join("");
+ bindDrag();
+}
+function bindDrag(){
+ document.querySelectorAll(".task").forEach(el=>{el.ondragstart=()=>{dragId=Number(el.dataset.id);el.classList.add("dragging")};el.ondragend=()=>{el.classList.remove("dragging");document.querySelectorAll(".over").forEach(x=>x.classList.remove("over"))}});
+ document.querySelectorAll(".dropzone,.driver-routes").forEach(z=>{z.ondragover=e=>{e.preventDefault();z.classList.add("over")};z.ondragleave=()=>z.classList.remove("over");z.ondrop=async e=>{e.preventDefault();z.classList.remove("over");if(!dragId)return;let target=e.target.closest(".task"),before=target?Number(target.dataset.id):null;if(z.dataset.driver)await moveDriver(dragId,Number(z.dataset.driver),before);else await moveStage(dragId,z.dataset.stage,before)}})
+}
+async function moveStage(id,stage,before){let list=tasks.filter(t=>!t.assigned_driver_id&&(t.planning_stage||"ready")===stage&&t.id!==id),idx=before?list.findIndex(t=>t.id===before):list.length;if(idx<0)idx=list.length;list.splice(idx,0,tasks.find(t=>t.id===id));for(let i=0;i<list.length;i++)await db.from("dispatch_tasks").update({planning_stage:stage,assigned_driver_id:null,status:"pending",sort_order:i}).eq("id",list[i].id);await load()}
+async function moveDriver(id,driver,before){let list=tasks.filter(t=>Number(t.assigned_driver_id)===driver&&t.id!==id&&t.status!=="completed"),idx=before?list.findIndex(t=>t.id===before):list.length;if(idx<0)idx=list.length;list.splice(idx,0,tasks.find(t=>t.id===id));for(let i=0;i<list.length;i++)await db.from("dispatch_tasks").update({planning_stage:"assigned",assigned_driver_id:driver,status:list[i].status==="in_progress"?"in_progress":"assigned",sort_order:i}).eq("id",list[i].id);await load()}
+async function load(){let [dr,tr,sr]=await Promise.all([db.from("drivers").select("*").order("id"),db.from("dispatch_tasks").select("*").order("sort_order"),db.from("driver_schedule").select("*").eq("work_date",boardDate)]);if(dr.error||tr.error){$("conn").textContent="Connection error";alert((dr.error||tr.error).message);return}$("conn").textContent="Supabase connected";drivers=(dr.data||[]).map(d=>({id:d.id,name:d.name||d.full_name||d.driver_name||`Driver ${d.id}`}));driverSchedule=sr.error?[]:(sr.data||[]);allTasks=(tr.data||[]);tasks=allTasks.filter(t=>(t.work_date||(!t.scheduled_at?ymd(new Date()):ymd(t.scheduled_at)))===boardDate);updateMetrics();syncBoardDateUI();render()}
+function openHistory(){let done=allTasks.filter(t=>t.status==="completed").sort((a,b)=>new Date(b.completed_at||b.scheduled_at||b.created_at)-new Date(a.completed_at||a.scheduled_at||a.created_at));$("historyList").innerHTML=done.length?done.map(t=>{let d=drivers.find(x=>Number(x.id)===Number(t.assigned_driver_id));return `<div class="history-row"><div class="history-date">${fmt(t.completed_at||t.scheduled_at||t.created_at)}</div><div class="history-route">${esc(t.pickup_name)} → ${esc(t.delivery_name)}</div><div class="history-driver">${esc(d?.name||"Unassigned")}</div><div class="history-status">Completed</div></div>`}).join(""):'<div class="empty">No completed routes yet.</div>';$("historyModal").classList.add("show")}
+function closeHistory(){$("historyModal").classList.remove("show")}
+function updateLocationPreview(which){let box=$(which+"Preview");if(!box)return;let loc=locationFromForm(which);box.innerHTML=loc&&loc[0]&&loc[1]?`<strong>${esc(loc[0])}</strong><br>${esc(loc[1])}`:`Select a ${which} location to see the address.`}
+function toggleCustomLocation(which){let custom=$(which).value==="custom";$(which+"Custom").classList.toggle("hidden",!custom);$(which+"CustomName").required=custom;$(which+"CustomAddress").required=custom;updateLocationPreview(which)}
+function locationFromForm(which){let v=$(which).value;if(v==="custom")return [$(which+"CustomName").value.trim(),$(which+"CustomAddress").value.trim()];if(v.startsWith("builtin:"))return LOC[Number(v.split(":")[1])];if(v.startsWith("saved:")){let x=savedLocations.find(s=>String(s.id)===v.split(":")[1]);return x?[x.name,x.address]:null}return null}
+async function loadSavedLocations(){let r=await db.from("saved_locations").select("*").order("name");if(r.error){console.error("Saved locations:",r.error);return}savedLocations=r.data||[]}
+async function saveLocationIfRequested(which,loc){if($(which).value!=="custom"||!$(which+"Save").checked)return;let existing=savedLocations.find(x=>x.name.toLowerCase()===loc[0].toLowerCase()&&x.address.toLowerCase()===loc[1].toLowerCase());if(existing)return;let r=await db.from("saved_locations").insert({name:loc[0],address:loc[1]}).select().single();if(r.error)throw r.error;savedLocations.push(r.data);savedLocations.sort((a,b)=>a.name.localeCompare(b.name))}
+function openTask(stage="brainstorm"){ $("form").reset();setTimeout(()=>{if(!$("scheduled").value)$("scheduled").value=boardDate+"T08:00"},0);$("id").value="";$("stage").value=stage;$("pickup").innerHTML=options();$("delivery").innerHTML=options();$("pickupCustom").classList.add("hidden");$("deliveryCustom").classList.add("hidden");$("pickupCustomName").required=false;$("pickupCustomAddress").required=false;$("deliveryCustomName").required=false;$("deliveryCustomAddress").required=false;$("pickupSave").checked=false;$("deliverySave").checked=false;$("modalTitle").textContent=stage==="brainstorm"?"Quick Planning Task":"New Task";$("modal").classList.add("show")}
+function closeTask(){$("modal").classList.remove("show")}
+function editTask(id){let t=tasks.find(x=>x.id===id);if(!t)return;openTask(t.planning_stage||"ready");$("id").value=id;$("modalTitle").textContent="Edit Task";let pi=LOC.findIndex(x=>x[0]===t.pickup_name&&x[1]===t.pickup_address),di=LOC.findIndex(x=>x[0]===t.delivery_name&&x[1]===t.delivery_address);
+let ps=savedLocations.find(x=>x.name===t.pickup_name&&x.address===t.pickup_address),ds=savedLocations.find(x=>x.name===t.delivery_name&&x.address===t.delivery_address);
+if(pi>=0){$("pickup").value="builtin:"+pi}else if(ps){$("pickup").value="saved:"+ps.id}else{$("pickup").value="custom";$("pickupCustomName").value=t.pickup_name||"";$("pickupCustomAddress").value=t.pickup_address||"";toggleCustomLocation("pickup")}
+if(di>=0){$("delivery").value="builtin:"+di}else if(ds){$("delivery").value="saved:"+ds.id}else{$("delivery").value="custom";$("deliveryCustomName").value=t.delivery_name||"";$("deliveryCustomAddress").value=t.delivery_address||"";toggleCustomLocation("delivery")};updateLocationPreview("pickup");updateLocationPreview("delivery");if(t.scheduled_at){let d=new Date(t.scheduled_at);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());$("scheduled").value=d.toISOString().slice(0,16)}$("priority").value=t.priority||"normal";$("job").value=t.job_client||"";$("material").value=t.material||"";$("pallets").value=t.pallet_qty??"";$("type").value=t.task_type||"other";$("notes").value=t.instructions||""}
+$("form").onsubmit=async e=>{e.preventDefault();let p=locationFromForm("pickup"),d=locationFromForm("delivery");if(!p||!d||!p[0]||!p[1]||!d[0]||!d[1])return alert("Please enter both a location name and full address.");let locationSaveError=null;try{await saveLocationIfRequested("pickup",p);await saveLocationIfRequested("delivery",d)}catch(err){locationSaveError=err;console.error("Saved customer error:",err)}let scheduledValue=$("scheduled").value;let taskWorkDate=scheduledValue?scheduledValue.slice(0,10):boardDate;let payload={work_date:taskWorkDate,title:p[0]+" - "+d[0],pickup_name:p[0],pickup_address:p[1],delivery_name:d[0],delivery_address:d[1],scheduled_at:scheduledValue?new Date(scheduledValue).toISOString():null,priority:$("priority").value,job_client:$("job").value||null,material:$("material").value||null,pallet_qty:$("pallets").value?Number($("pallets").value):null,task_type:$("type").value,instructions:$("notes").value||null};let id=$("id").value;if(id)await db.from("dispatch_tasks").update(payload).eq("id",Number(id));else await db.from("dispatch_tasks").insert({...payload,status:"pending",planning_stage:$("stage").value,sort_order:999});closeTask();await load();if(locationSaveError){let detail=locationSaveError.message||locationSaveError.details||locationSaveError.hint||String(locationSaveError);alert("Route saved. The customer was not added to Saved Customers.\n\nSupabase error: "+detail)}}
+async function removeTask(id){if(!confirm("Delete this task?"))return;let {error}=await db.from("dispatch_tasks").delete().eq("id",id);if(error)return alert(error.message);await load()}
+$("modal").onclick=e=>{if(e.target===$("modal"))closeTask()};$("historyModal").onclick=e=>{if(e.target===$("historyModal"))closeHistory()};setInterval(()=>{if(!$("modal").classList.contains("show"))load()},20000);
+
+let mobileDrag=null,mobileTimer=null,mobileStartX=0,mobileStartY=0,mobileTarget=null;
+function clearMobileTarget(){if(mobileTarget){mobileTarget.classList.remove("mobile-drop-target");mobileTarget=null}}
+function cancelMobileDrag(){clearTimeout(mobileTimer);mobileTimer=null;if(mobileDrag?.el)mobileDrag.el.classList.remove("mobile-dragging");mobileDrag=null}
+function mobileTaskDown(e){
+  if(e.pointerType==="mouse"||e.target.closest("button"))return;
+  let card=e.target.closest(".task"); if(!card)return;
+  let id=Number(card.dataset.id); if(!id)return;
+  mobileStartX=e.clientX;mobileStartY=e.clientY;
+  mobileTimer=setTimeout(()=>{mobileDrag={id,el:card,pointerId:e.pointerId};card.classList.add("mobile-dragging");if(navigator.vibrate)navigator.vibrate(35)},300);
+}
+function mobileTaskMove(e){
+  if(e.pointerType==="mouse")return;
+  if(!mobileDrag){
+    if(mobileTimer&&Math.hypot(e.clientX-mobileStartX,e.clientY-mobileStartY)>12){clearTimeout(mobileTimer);mobileTimer=null}
+    return;
+  }
+  e.preventDefault();
+  clearMobileTarget();
+  let el=document.elementFromPoint(e.clientX,e.clientY);
+  let target=el?.closest("[data-drop-driver], [data-drop-stage]");
+  if(target){mobileTarget=target;target.classList.add("mobile-drop-target")}
+}
+async function mobileTaskUp(e){
+  clearTimeout(mobileTimer);mobileTimer=null;
+  if(!mobileDrag)return;
+  e.preventDefault();
+  let id=mobileDrag.id, target=mobileTarget;
+  mobileDrag.el.classList.remove("mobile-dragging");clearMobileTarget();mobileDrag=null;
+  if(!target)return;
+  if(target.dataset.dropDriver){await moveDriver(id,Number(target.dataset.dropDriver),null)}
+  else if(target.dataset.dropStage){await moveStage(id,target.dataset.dropStage,null)}
+}
+// legacy mobile pointer drag disabled
+// legacy mobile pointer drag disabled
+document.addEventListener("pointerup",mobileTaskUp,{passive:false});
+document.addEventListener("pointercancel",cancelMobileDrag,{passive:true});
+async function initSavedLocationFeature(){await loadSavedLocations();await load()}
+$("pickupCustomName").addEventListener("input",()=>updateLocationPreview("pickup"));
+$("pickupCustomAddress").addEventListener("input",()=>updateLocationPreview("pickup"));
+$("deliveryCustomName").addEventListener("input",()=>updateLocationPreview("delivery"));
+$("deliveryCustomAddress").addEventListener("input",()=>updateLocationPreview("delivery"));
+initSavedLocationFeature();
+function applyTheme(theme){
+ document.body.classList.toggle("light-mode",theme==="light");
+ localStorage.setItem("shift-theme",theme);
+ let b=$("themeToggle");if(b)b.textContent=theme==="light"?"☾ Dark":"☀ Light";
+}
+function toggleTheme(){applyTheme(document.body.classList.contains("light-mode")?"dark":"light")}
+document.addEventListener("DOMContentLoaded",()=>applyTheme(localStorage.getItem("shift-theme")||"dark"));
+
+/* v2.6.1 — touch drag for phones */
+let touchDrag=null;
+let mobileScrollRAF=null;
+function mobileScrollLoop(){
+ if(!touchDrag||!touchDrag.active){mobileScrollRAF=null;return}
+ const y=touchDrag.lastY,edge=Math.max(75,window.innerHeight*.12);
+ let speed=0;
+ if(y<edge)speed=-Math.ceil((edge-y)/edge*15);
+ else if(y>window.innerHeight-edge)speed=Math.ceil((y-(window.innerHeight-edge))/edge*15);
+ if(speed)window.scrollBy(0,speed);
+ mobileScrollRAF=requestAnimationFrame(mobileScrollLoop);
+}
+function startMobileScroll(){if(!mobileScrollRAF)mobileScrollRAF=requestAnimationFrame(mobileScrollLoop)}
+function stopMobileScroll(){if(mobileScrollRAF){cancelAnimationFrame(mobileScrollRAF);mobileScrollRAF=null}}
+
+function tdClear(){
+ stopMobileScroll();
+ if(!touchDrag)return;
+ clearTimeout(touchDrag.timer);
+ if(touchDrag.ghost)touchDrag.ghost.remove();
+ document.querySelectorAll(".mobile-drop-hot").forEach(x=>x.classList.remove("mobile-drop-hot"));
+ touchDrag=null;
+}
+function tdActivate(x,y){
+ if(!touchDrag)return;
+ touchDrag.active=true;
+ const r=touchDrag.card.getBoundingClientRect(),g=touchDrag.card.cloneNode(true);
+ g.classList.add("touch-drag-ghost");g.style.width=r.width+"px";g.style.left=(x-r.width/2)+"px";g.style.top=(y-28)+"px";
+ document.body.appendChild(g);touchDrag.ghost=g;
+ if(navigator.vibrate)navigator.vibrate(20);startMobileScroll();
+}
+function tdStart(e){
+ if(e.touches.length!==1||e.target.closest("button,a,input,select,textarea,label"))return;
+ const card=e.target.closest(".task[data-id]");if(!card)return;
+ const t=e.touches[0];
+ touchDrag={id:Number(card.dataset.id),card,sx:t.clientX,sy:t.clientY,lastY:t.clientY,active:false,ghost:null};
+ touchDrag.timer=setTimeout(()=>tdActivate(t.clientX,t.clientY),260);
+}
+function tdMove(e){
+ if(!touchDrag||e.touches.length!==1)return;
+ const t=e.touches[0];touchDrag.lastY=t.clientY;
+ if(!touchDrag.active){
+   if(Math.hypot(t.clientX-touchDrag.sx,t.clientY-touchDrag.sy)>14)tdClear();
+   return;
+ }
+ e.preventDefault();
+ if(touchDrag.ghost){touchDrag.ghost.style.left=(t.clientX-touchDrag.ghost.offsetWidth/2)+"px";touchDrag.ghost.style.top=(t.clientY-28)+"px"}
+ document.querySelectorAll(".mobile-drop-hot").forEach(x=>x.classList.remove("mobile-drop-hot"));
+ let u=document.elementFromPoint(t.clientX,t.clientY);
+ let z=u&&u.closest("[data-drop-driver],[data-drop-stage],.task[data-id]");
+ if(z)z.classList.add("mobile-drop-hot");
+}
+async function tdEnd(e){
+ if(!touchDrag)return;
+ clearTimeout(touchDrag.timer);stopMobileScroll();
+ const d=touchDrag;
+ if(!d.active){tdClear();return}
+ const t=e.changedTouches&&e.changedTouches[0];
+ let z=t&&document.elementFromPoint(t.clientX,t.clientY);
+ z=z&&z.closest("[data-drop-driver],[data-drop-stage],.task[data-id]");
+ if(d.ghost)d.ghost.remove();
+ document.querySelectorAll(".mobile-drop-hot").forEach(x=>x.classList.remove("mobile-drop-hot"));
+ touchDrag=null;
+ if(!z)return;
+ const before=z.matches(".task[data-id]")?Number(z.dataset.id):null;
+ const dz=z.closest("[data-drop-driver]"),sz=z.closest("[data-drop-stage]");
+ try{
+   if(dz)await moveDriver(d.id,Number(dz.dataset.dropDriver),before);
+   else if(sz)await moveStage(d.id,sz.dataset.dropStage,before);
+ }catch(err){console.error(err);alert("Could not move the task. Please try again.")}
+}
+document.addEventListener("touchstart",tdStart,{passive:true});
+document.addEventListener("touchmove",tdMove,{passive:false});
+document.addEventListener("touchend",tdEnd,{passive:true});
+document.addEventListener("touchcancel",tdClear,{passive:true});
+
+/* v2.6.3 desktop drag auto-scroll */
+let deskDrag=false,deskY=0,deskRAF=null;
+function deskScrollLoop(){
+ if(!deskDrag){deskRAF=null;return}
+ const edge=Math.max(85,window.innerHeight*.12);let speed=0;
+ if(deskY<edge)speed=-Math.ceil((edge-deskY)/edge*18);
+ else if(deskY>window.innerHeight-edge)speed=Math.ceil((deskY-(window.innerHeight-edge))/edge*18);
+ if(speed)window.scrollBy(0,speed);
+ deskRAF=requestAnimationFrame(deskScrollLoop);
+}
+document.addEventListener("dragstart",()=>{deskDrag=true;document.body.classList.add("drag-scrolling");if(!deskRAF)deskRAF=requestAnimationFrame(deskScrollLoop)});
+document.addEventListener("dragover",e=>{deskY=e.clientY});
+function stopDeskDrag(){deskDrag=false;document.body.classList.remove("drag-scrolling");if(deskRAF){cancelAnimationFrame(deskRAF);deskRAF=null}}
+document.addEventListener("dragend",stopDeskDrag);
+document.addEventListener("drop",stopDeskDrag);
+
+/* v2.7.0 Future Scheduling */
+let boardDate=sessionStorage.getItem("shift-board-date")||ymd(new Date());
+function boardDateLabel(){let today=ymd(new Date()),tom=new Date();tom.setDate(tom.getDate()+1);if(boardDate===today)return "Today";if(boardDate===ymd(tom))return "Tomorrow";return new Date(boardDate+"T12:00:00").toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:"numeric"})}
+function syncBoardDateUI(){let p=$("boardDatePicker"),l=$("boardDateLabel");if(p)p.value=boardDate;if(l)l.textContent=boardDateLabel();
+ const hd=$("headerDateText");if(hd)hd.textContent=new Date(boardDate+"T12:00:00").toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"})}
+function setBoardDate(v){if(!v)return;boardDate=v;sessionStorage.setItem("shift-board-date",v);syncBoardDateUI();load()}
+function shiftBoardDate(n){let d=new Date(boardDate+"T12:00:00");d.setDate(d.getDate()+n);setBoardDate(ymd(d))}
+function todayBoard(){setBoardDate(ymd(new Date()))}
+
+async function loadHeaderWeather(){
+ const el=document.getElementById("headerWeather");if(!el)return;
+ try{
+  const r=await fetch("https://api.open-meteo.com/v1/forecast?latitude=41.8781&longitude=-87.6298&current=temperature_2m,weather_code&temperature_unit=fahrenheit&timezone=America%2FChicago",{cache:"no-store"});
+  if(!r.ok)throw new Error("weather");
+  const j=await r.json(),c=j.current||{},code=Number(c.weather_code);
+  let s=code===0?"Clear":code<=3?"Partly cloudy":code<=48?"Foggy":code<=67?"Rain":code<=77?"Snow":code<=82?"Showers":code<=86?"Snow showers":code<=99?"Storms":"Conditions";
+  el.innerHTML='<span class="weather-dot">●</span> Chicago · '+Math.round(c.temperature_2m)+'°F · '+s;
+ }catch(e){el.innerHTML='<span class="weather-dot">●</span> Chicago weather unavailable';}
+}
+document.addEventListener("DOMContentLoaded",()=>{syncBoardDateUI();loadHeaderWeather()});
+
+/* v2.7.3 cross-platform SHIFT calendar */
+let calViewDate=new Date(boardDate+"T12:00:00");
+function openShiftCalendar(){calViewDate=new Date(boardDate+"T12:00:00");renderShiftCalendar();$("shiftCalendarBackdrop").classList.add("open")}
+function closeShiftCalendar(){$("shiftCalendarBackdrop").classList.remove("open")}
+function calendarBackdropClose(e){if(e.target===$("shiftCalendarBackdrop"))closeShiftCalendar()}
+function changeCalMonth(n){calViewDate.setMonth(calViewDate.getMonth()+n);renderShiftCalendar()}
+function calendarToday(){const d=new Date();calViewDate=new Date(d.getFullYear(),d.getMonth(),1);chooseCalDate(ymd(d))}
+function chooseCalDate(v){closeShiftCalendar();setBoardDate(v)}
+function renderShiftCalendar(){
+ const y=calViewDate.getFullYear(),m=calViewDate.getMonth();
+ $("shiftCalMonth").textContent=new Date(y,m,1).toLocaleDateString(undefined,{month:"long",year:"numeric"});
+ const first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate(),prevDays=new Date(y,m,0).getDate();
+ let html="";
+ for(let i=first-1;i>=0;i--){html+=`<button class="outside" type="button" onclick="chooseCalDate('${ymd(new Date(y,m-1,prevDays-i))}')">${prevDays-i}</button>`}
+ for(let d=1;d<=days;d++){
+  const val=ymd(new Date(y,m,d)),cls=(val===boardDate?" selected":"")+(val===ymd(new Date())?" today":"");
+  html+=`<button class="${cls.trim()}" type="button" onclick="chooseCalDate('${val}')">${d}</button>`;
+ }
+ let used=first+days,next=1;
+ while(used%7!==0){html+=`<button class="outside" type="button" onclick="chooseCalDate('${ymd(new Date(y,m+1,next))}')">${next}</button>`;next++;used++}
+ $("shiftCalDays").innerHTML=html;
+}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeShiftCalendar()});
+
+/* v2.8.7 daily board rollover / archive behavior */
+let shiftLastToday=ymd(new Date());
+setInterval(()=>{
+ const nowToday=ymd(new Date());
+ if(nowToday!==shiftLastToday){
+   const wasOnToday=boardDate===shiftLastToday;
+   shiftLastToday=nowToday;
+   if(wasOnToday){
+     boardDate=nowToday;
+     sessionStorage.setItem("shift-board-date",boardDate);
+     syncBoardDateUI();
+     load();
+   }else{
+     updateMetrics();
+   }
+ }
+},60000);
+
+/* v2.9.0 shared team reminders */
+let reminders=[],reminderFilter="open",remindersReady=true;
+function reminderDateKey(v){return v?ymd(v):""}
+function reminderDueLabel(v){
+ if(!v)return "No due date";
+ let d=new Date(v), today=ymd(new Date()), key=ymd(d);
+ let day=key===today?"Today":d.toLocaleDateString([],{month:"short",day:"numeric"});
+ return day+" · "+d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+}
+function reminderGroup(r){
+ if(!r.due_at)return "No Date";
+ let k=reminderDateKey(r.due_at),today=ymd(new Date());
+ if(k===today)return "Today";
+ return k<today?"Overdue":"Upcoming";
+}
+function renderReminders(){
+ let list=$("reminderList");if(!list)return;
+ if(!remindersReady){list.innerHTML='<div class="empty">Reminders need the one-time Supabase setup included with this update.</div>';return}
+ let rows=reminders.filter(r=>reminderFilter==="completed"?r.completed:!r.completed);
+ if(!rows.length){list.innerHTML='<div class="empty">No '+(reminderFilter==="completed"?"completed":"open")+' reminders.</div>';return}
+ let groups=["Overdue","Today","Upcoming","No Date"];
+ list.innerHTML=groups.map(g=>{
+   let rs=rows.filter(r=>reminderGroup(r)===g);
+   if(!rs.length)return "";
+   return `<div class="reminder-group-title">${g}</div>`+rs.map(r=>`<div class="reminder-item ${r.priority==="high"?"high":""} ${r.completed?"done":""}">
+   <input class="reminder-check" type="checkbox" ${r.completed?"checked":""} onchange="toggleReminder(${r.id},this.checked)">
+   <div class="reminder-copy"><strong>${esc(r.note)}</strong><small>${reminderDueLabel(r.due_at)}${r.priority==="high"?" · High priority":""}</small></div>
+   <div class="reminder-actions"><button class="mini" onclick="editReminder(${r.id})">Edit</button><button class="mini danger" onclick="deleteReminder(${r.id})">Delete</button></div></div>`).join("");
+ }).join("");
+}
+async function loadReminders(){
+ let r=await db.from("shift_reminders").select("*").order("due_at",{ascending:true,nullsFirst:false}).order("created_at",{ascending:false});
+ if(r.error){console.warn("Reminders unavailable:",r.error);remindersReady=false;reminders=[]}
+ else{remindersReady=true;reminders=r.data||[]}
+ let badge=$("reminderBadge");if(badge)badge.textContent=reminders.filter(x=>!x.completed).length;
+ renderReminders();
+}
+async function openReminders(){$("remindersModal").classList.add("show");await loadReminders()}
+function closeReminders(){$("remindersModal").classList.remove("show");resetReminderForm()}
+function setReminderFilter(f,b){reminderFilter=f;document.querySelectorAll(".reminder-filter").forEach(x=>x.classList.toggle("active",x.dataset.filter===f));renderReminders()}
+function resetReminderForm(){$("reminderForm")?.reset();if($("reminderId"))$("reminderId").value=""}
+function editReminder(id){let r=reminders.find(x=>Number(x.id)===Number(id));if(!r)return;$("reminderId").value=r.id;$("reminderText").value=r.note||"";$("reminderPriority").value=r.priority||"normal";if(r.due_at){let d=new Date(r.due_at);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());$("reminderDue").value=d.toISOString().slice(0,16)}else $("reminderDue").value="";$("reminderText").focus()}
+async function toggleReminder(id,completed){let {error}=await db.from("shift_reminders").update({completed,completed_at:completed?new Date().toISOString():null}).eq("id",id);if(error)return alert(error.message);await loadReminders()}
+async function deleteReminder(id){if(!confirm("Delete this reminder?"))return;let {error}=await db.from("shift_reminders").delete().eq("id",id);if(error)return alert(error.message);await loadReminders()}
+$("reminderForm").onsubmit=async e=>{e.preventDefault();if(!remindersReady)return alert("Run the included Supabase reminders setup first.");let note=$("reminderText").value.trim();if(!note)return;let due=$("reminderDue").value;let payload={note,priority:$("reminderPriority").value,due_at:due?new Date(due).toISOString():null};let id=$("reminderId").value;let q=id?db.from("shift_reminders").update(payload).eq("id",Number(id)):db.from("shift_reminders").insert({...payload,completed:false});let {error}=await q;if(error)return alert(error.message);resetReminderForm();await loadReminders()};
+$("remindersModal").onclick=e=>{if(e.target===$("remindersModal"))closeReminders()};
+setTimeout(loadReminders,500);
+
+/* v3.0.0 Driver Schedule */
+function scheduleStatusLabel(s){return ({working:"Working",off:"Off",pto:"PTO",call_off:"Call Off",messenger:"Messenger"})[s]||"Not scheduled"}
+function formatScheduleTime(v){if(!v)return "";let [hh,mm]=v.slice(0,5).split(":").map(Number);let ap=hh>=12?"PM":"AM";hh=hh%12||12;return `${hh}:${String(mm).padStart(2,"0")} ${ap}`}
+function scheduleRow(d,r){
+ let st=r?.status||"working",start=r?.start_time?.slice(0,5)||"07:00",end=r?.end_time?.slice(0,5)||"15:30",note=r?.note||"";
+ return `<div class="schedule-row" data-driver-id="${d.id}"><div class="schedule-driver">${esc(d.name)}</div><select class="schedule-status"><option value="working" ${st==="working"?"selected":""}>Working</option><option value="off" ${st==="off"?"selected":""}>Off</option><option value="pto" ${st==="pto"?"selected":""}>PTO</option><option value="call_off" ${st==="call_off"?"selected":""}>Call Off</option><option value="messenger" ${st==="messenger"?"selected":""}>Messenger</option></select><input class="schedule-start" type="time" value="${start}"><input class="schedule-end" type="time" value="${end}"><input class="schedule-note" maxlength="120" placeholder="Optional note" value="${esc(note)}"></div>`;
+}
+async function openDriverSchedule(){let m=$("scheduleModal");$("scheduleDate").value=boardDate;m.classList.add("show");await loadDriverSchedule()}
+function closeDriverSchedule(){$("scheduleModal").classList.remove("show")}
+function changeScheduleDate(days){let d=new Date($("scheduleDate").value+"T12:00:00");d.setDate(d.getDate()+days);$("scheduleDate").value=ymd(d);loadDriverSchedule()}
+async function loadDriverSchedule(){let date=$("scheduleDate").value||boardDate;let r=await db.from("driver_schedule").select("*").eq("work_date",date);if(r.error){$("scheduleList").innerHTML='<div class="empty">Driver Schedule needs the one-time Supabase setup included with this update.</div>';return}$("scheduleList").innerHTML=drivers.map(d=>scheduleRow(d,(r.data||[]).find(x=>Number(x.driver_id)===Number(d.id)))).join("")}
+async function saveDriverSchedule(){let date=$("scheduleDate").value;if(!date)return;let rows=[...document.querySelectorAll(".schedule-row")].map(el=>({work_date:date,driver_id:Number(el.dataset.driverId),status:el.querySelector(".schedule-status").value,start_time:el.querySelector(".schedule-start").value||null,end_time:el.querySelector(".schedule-end").value||null,note:el.querySelector(".schedule-note").value.trim()||null}));let r=await db.from("driver_schedule").upsert(rows,{onConflict:"work_date,driver_id"});if(r.error)return alert(r.error.message);if(date===boardDate)await load();closeDriverSchedule()}
+async function copyPreviousSchedule(){let date=$("scheduleDate").value;if(!date)return;let d=new Date(date+"T12:00:00");d.setDate(d.getDate()-1);let prev=ymd(d);let r=await db.from("driver_schedule").select("*").eq("work_date",prev);if(r.error)return alert(r.error.message);if(!r.data?.length)return alert("No driver schedule was found for the previous day.");$("scheduleList").innerHTML=drivers.map(dr=>scheduleRow(dr,r.data.find(x=>Number(x.driver_id)===Number(dr.id)))).join("")}
+$("scheduleModal").onclick=e=>{if(e.target===$("scheduleModal"))closeDriverSchedule()};
+</script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
+ <div class="shift-cal" role="dialog" aria-modal="true" aria-label="Select date">
+  <div class="shift-cal-head">
+   <button type="button" onclick="changeCalMonth(-1)">‹</button>
+   <strong id="shiftCalMonth"></strong>
+   <button type="button" onclick="changeCalMonth(1)">›</button>
+  </div>
+  <div class="shift-cal-week"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+  <div id="shiftCalDays" class="shift-cal-days"></div>
+  <div class="shift-cal-foot"><button type="button" onclick="calendarToday()">Today</button><button type="button" onclick="closeShiftCalendar()">Close</button></div>
+ </div>
+</div></body></html>
