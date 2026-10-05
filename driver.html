@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080d14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SHIFT Driver">
+<link rel="manifest" href="driver-manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>SHIFT Driver</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#080d14;--panel:#0f1925;--line:#22364b;--ink:#f3f7fb;--muted:#8fa0b5;--blue:#0a84ff;--green:#22c55e;--amber:#ffc107;--red:#ef5350}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;padding-bottom:env(safe-area-inset-bottom)}
+header{position:sticky;top:0;z-index:5;background:rgba(8,13,20,.96);border-bottom:1px solid var(--line);padding:calc(10px + env(safe-area-inset-top)) 14px 10px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.brand{font-weight:1000;font-style:italic;letter-spacing:3px;font-size:22px}.brand small{display:block;font-style:normal;letter-spacing:.5px;font-size:11px;color:var(--muted);font-weight:700}
+.who{text-align:right;font-weight:800}.who small{display:block;color:var(--muted);font-weight:600;font-size:12px}
+main{padding:12px;max-width:640px;margin:auto}
+.bar{display:flex;gap:8px;align-items:center;margin:4px 0 12px}.bar button{flex:0 0 auto}.bar .day{flex:1;text-align:center;font-weight:900}
+button{font:inherit;border:0;cursor:pointer;border-radius:12px}
+.btn{padding:12px 14px;font-weight:850;background:#152334;color:#dce8f4;border:1px solid var(--line)}
+.btn.small{padding:8px 11px;font-size:13px}
+.notice{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:12px;margin-bottom:12px;color:#cfdbe7;font-size:14px}
+.notice.warn{border-color:#6b5414;background:#221b07}
+.stop{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--blue);border-radius:16px;padding:14px;margin-bottom:12px}
+.stop.in_progress{border-left-color:var(--amber)}.stop.done{border-left-color:var(--green);opacity:.8}.stop.flagged{border-left-color:var(--red)}
+.stop-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.seq{font-weight:1000;font-size:13px;color:var(--muted)}
+.badge{font-size:11px;font-weight:950;letter-spacing:.06em;padding:4px 8px;border-radius:8px;text-transform:uppercase}
+.badge.pickup{background:rgba(40,185,255,.15);color:#65cfff}.badge.delivery{background:rgba(105,223,145,.14);color:#75e79a}.badge.shuttle{background:rgba(175,121,255,.15);color:#c49aff}.badge.other{background:#1d2b3a;color:#b8c5d0}
+.badge.new{background:#0a84ff;color:#fff}.badge.st{background:#1d2b3a;color:#cfe0ee}.badge.st.in_progress{background:rgba(255,193,7,.16);color:#ffd34d}.badge.st.completed{background:rgba(34,197,94,.16);color:#69df91}.badge.flag{background:rgba(239,83,80,.18);color:#ff9c9c}
+.time{font-size:20px;font-weight:950;margin:2px 0 8px}
+.leg{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:9px 0;border-top:1px solid rgba(120,145,165,.15)}
+.leg b{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}.leg strong{display:block;font-size:17px}.leg span{display:block;color:#c4d2df;font-size:14px}
+.map{background:#10304d;color:#8fd0ff;border:1px solid #1f5480;padding:10px 12px;font-weight:850;font-size:14px;text-decoration:none;border-radius:11px;white-space:nowrap}
+.info{color:#b6c5d4;font-size:14px;margin-top:6px;line-height:1.45}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.done-btn{grid-column:1/-1;background:linear-gradient(135deg,#16a34a,#22c55e);color:#04210f;font-weight:1000;font-size:20px;padding:16px}
+.start-btn{grid-column:1/-1;background:#14324f;color:#8fd0ff;border:1px solid #1f5480;font-weight:900;padding:13px}
+.miss-btn{background:#2a1a10;color:#ffbf80;border:1px solid #6b3d16;padding:12px;font-weight:850}
+.ref-btn{background:#2a1214;color:#ff9c9c;border:1px solid #6b2328;padding:12px;font-weight:850}
+.directions{display:block;text-align:center;margin-top:8px;color:#8fd0ff;font-weight:800;font-size:14px}
+details.donebox{margin-top:8px}details.donebox summary{cursor:pointer;color:#69df91;font-weight:900;padding:10px 2px}
+.empty{text-align:center;color:var(--muted);padding:40px 12px;border:1px dashed var(--line);border-radius:16px}
+.picker button{display:block;width:100%;text-align:left;margin-bottom:8px}
+.toast{position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));background:#0f2a1a;border:1px solid #2f7d4c;color:#c9f5d8;border-radius:14px;padding:12px 14px;display:none;align-items:center;justify-content:space-between;gap:10px;z-index:20;font-weight:800;max-width:616px;margin:auto}
+.toast.show{display:flex}.toast button{background:#174a2c;color:#c9f5d8;padding:8px 12px}
+.foot{color:#5f7286;text-align:center;font-size:11px;margin:20px 0}
+</style></head>
+<body>
+<header><div class="brand">SHIFT<small>Driver · v3.4.0</small></div><div class="who" id="who">…</div></header>
+<main>
+ <div id="alerts"></div>
+ <div class="bar" id="dayBar" style="display:none"><button class="btn small" onclick="shiftDay(-1)">‹</button><div class="day" id="dayLabel"></div><button class="btn small" onclick="shiftDay(1)">›</button><button class="btn small" onclick="refresh(true)">↻</button></div>
+ <div id="content"><div class="empty">Loading…</div></div>
+ <div class="foot" id="foot"></div>
+</main>
+<div class="toast" id="toast"><span id="toastText"></span><button id="toastBtn">Undo</button></div>
+<script>
+/* SHIFT Driver page — reuses the dashboard's existing Supabase project + publishable key (same as index.html). */
+const SUPABASE_URL="https://hqhfstosclasgwgxubip.supabase.co";
+const SUPABASE_KEY="sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk";
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+function ymd(v){let d=new Date(v);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")}
+function hm(v){return v?new Date(v).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"Time TBD"}
+function fmtT(v){if(!v)return "";let [h,m]=v.slice(0,5).split(":").map(Number);return `${h%12||12}:${String(m).padStart(2,"0")} ${h>=12?"PM":"AM"}`}
+const qs=new URLSearchParams(location.search);
+let driverId=Number(qs.get("d")||qs.get("driver")||localStorage.getItem("shift-driver-id")||0)||null;
+let day=qs.get("date")||ymd(new Date());
+let driver=null,stops=[],alertsOpen=[],eventsTable=null,firstLoad=true;
+const SEEN_KEY=()=>"shift-driver-seen-"+driverId;
+function seen(){try{return new Set(JSON.parse(localStorage.getItem(SEEN_KEY())||"[]"))}catch(_){return new Set()}}
+function saveSeen(s){localStorage.setItem(SEEN_KEY(),JSON.stringify([...s].slice(-400)))}
+function taskDay(t){return t.work_date||(t.scheduled_at?ymd(t.scheduled_at):ymd(new Date()))}
+function typeKey(t){let r=(t.task_type||"").toLowerCase();return r.includes("pickup")?"pickup":r.includes("delivery")?"delivery":r.includes("shuttle")?"shuttle":"other"}
+function mapUrl(addr){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(addr||"")}
+function dirUrl(t){return "https://www.google.com/maps/dir/?api=1&origin="+encodeURIComponent(t.pickup_address||"")+"&destination="+encodeURIComponent(t.delivery_address||"")+"&travelmode=driving"}
+let toastTimer=null;
+function toast(text,btnLabel,fn){$("toastText").textContent=text;let b=$("toastBtn");if(btnLabel){b.style.display="";b.textContent=btnLabel;b.onclick=()=>{hideToast();fn&&fn()}}else b.style.display="none";$("toast").classList.add("show");clearTimeout(toastTimer);toastTimer=setTimeout(hideToast,7000)}
+function hideToast(){$("toast").classList.remove("show")}
+
+async function probeEvents(){if(eventsTable!==null)return eventsTable;let r=await db.from("dispatch_events").select("id").limit(1);eventsTable=!r.error;return eventsTable}
+async function logEvent(task,event,detail){try{if(!(await probeEvents()))return;await db.from("dispatch_events").insert({task_id:task.id,driver_id:driverId,event,detail:detail||null})}catch(_){}}
+
+async function showPicker(){
+ $("who").innerHTML="Select driver";$("dayBar").style.display="none";
+ let r=await db.from("drivers").select("id,name,active").order("name");
+ if(r.error){$("content").innerHTML=`<div class="empty">Could not load drivers: ${esc(r.error.message)}</div>`;return}
+ $("content").innerHTML=`<div class="notice">Tap your name once. This phone will remember you.</div><div class="picker">`+(r.data||[]).filter(d=>d.active!==false).map(d=>`<button class="btn" onclick="pickDriver(${d.id})">${esc(d.name)}</button>`).join("")+`</div>`;
+}
+function pickDriver(id){driverId=id;localStorage.setItem("shift-driver-id",id);let u=new URL(location.href);u.searchParams.set("d",id);history.replaceState(null,"",u);refresh(true)}
+
+async function scheduleText(){
+ let [o,w]=await Promise.all([db.from("driver_schedule").select("*").eq("driver_id",driverId).eq("work_date",day),db.from("driver_weekly_schedule").select("*").eq("driver_id",driverId)]);
+ let ov=(o.data||[])[0];if(ov){return ov.status==="working"||ov.status==="messenger"?`${ov.status==="messenger"?"Messenger":"Start"} ${fmtT(ov.start_time)}${ov.end_time?" – "+fmtT(ov.end_time):""}`:({off:"Off",pto:"PTO",call_off:"Call off"})[ov.status]||ov.status}
+ let dow=new Date(day+"T12:00:00").getDay(),wk=(w.data||[]).find(x=>Number(x.day_of_week)===dow);
+ return wk&&wk.working?`Start ${fmtT(wk.start_time)}${wk.end_time?" – "+fmtT(wk.end_time):""}`:"Not scheduled";
+}
+
+async function refresh(force){
+ if(!driverId){showPicker();return}
+ let [dr,tr,ar]=await Promise.all([
+  db.from("drivers").select("id,name").eq("id",driverId).maybeSingle(),
+  db.from("dispatch_tasks").select("*").eq("assigned_driver_id",driverId).order("sort_order"),
+  db.from("shift_reminders").select("id,note,completed").eq("completed",false).like("note","%[SHIFT-DRIVER task:%")
+ ]);
+ if(dr.error||tr.error){$("content").innerHTML=`<div class="empty">Connection problem. Pull to refresh.<br><small>${esc((dr.error||tr.error).message)}</small></div>`;return}
+ if(!dr.data){localStorage.removeItem("shift-driver-id");driverId=null;showPicker();return}
+ driver=dr.data;alertsOpen=ar.error?[]:(ar.data||[]);
+ let sch=await scheduleText();
+ $("who").innerHTML=`${esc(driver.name)}<small>${esc(sch)}</small>`;
+ document.title="SHIFT · "+driver.name;
+ let today=ymd(new Date());
+ $("dayBar").style.display="flex";$("dayLabel").textContent=day===today?"Today":new Date(day+"T12:00:00").toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
+ let prev=new Set(stops.map(s=>s.id));
+ stops=(tr.data||[]).filter(t=>taskDay(t)===day);
+ let s=seen(),fresh=stops.filter(t=>t.status!=="completed"&&!s.has(t.id));
+ if(!firstLoad){let newly=fresh.filter(t=>!prev.has(t.id));if(newly.length)notifyNew(newly)}
+ firstLoad=false;
+ render(s);
+ $("foot").textContent="Updated "+new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit",second:"2-digit"})+" · auto-refreshes every 20s";
+}
+function flagFor(t){return alertsOpen.find(a=>new RegExp("\\[SHIFT-DRIVER task:"+t.id+" (missed|refused)\\]").test(a.note||""))}
+function stopCard(t,i,s){
+ let st=t.status||"assigned",done=st==="completed",tk=typeKey(t),fl=flagFor(t),isNew=!done&&!s.has(t.id);
+ let flagKind=fl?(fl.note.match(/ (missed|refused)\]/)||[])[1]:null;
+ let actions=done?`<div class="info">✓ Done ${t.completed_at?hm(t.completed_at):""}</div>`:`<div class="actions">
+  ${st!=="in_progress"?`<button class="start-btn" onclick="startStop(${t.id})">▶ Start / On my way</button>`:""}
+  <button class="done-btn" onclick="doneStop(${t.id})">✓ DONE</button>
+  <button class="miss-btn" onclick="flagStop(${t.id},'missed')">Missed</button>
+  <button class="ref-btn" onclick="flagStop(${t.id},'refused')">Refused</button></div>`;
+ return `<section class="stop ${done?"done":st} ${fl?"flagged":""}" id="stop-${t.id}">
+  <div class="stop-top"><span class="seq">STOP ${i+1}</span><span>${isNew?'<span class="badge new">NEW</span> ':""}${fl?`<span class="badge flag">${esc(flagKind)} · reported</span> `:""}<span class="badge ${tk}">${tk==="other"?"Other":tk}</span> <span class="badge st ${esc(st)}">${esc(st.replace("_"," "))}</span></span></div>
+  <div class="time">${hm(t.scheduled_at)}${t.pallet_qty!=null?` <span style="font-size:14px;color:#8fa0b5">· ${t.pallet_qty} pallets</span>`:""}</div>
+  <div class="leg"><div><b>↑ Pickup</b><strong>${esc(t.pickup_name)}</strong><span>${esc(t.pickup_address)}</span></div><a class="map" href="${mapUrl(t.pickup_address)}" target="_blank" rel="noopener">Map</a></div>
+  <div class="leg"><div><b>↓ Deliver</b><strong>${esc(t.delivery_name)}</strong><span>${esc(t.delivery_address)}</span></div><a class="map" href="${mapUrl(t.delivery_address)}" target="_blank" rel="noopener">Map</a></div>
+  ${t.job_client||t.material||t.instructions?`<div class="info">${t.job_client?"<b>Job:</b> "+esc(t.job_client)+"<br>":""}${t.material?"<b>Material:</b> "+esc(t.material)+"<br>":""}${t.instructions?"<b>Notes:</b> "+esc(t.instructions).replace(/\n/g,"<br>"):""}</div>`:""}
+  <a class="directions" href="${dirUrl(t)}" target="_blank" rel="noopener">Directions pickup → delivery ↗</a>
+  ${actions}</section>`;
+}
+function render(s){
+ let active=stops.filter(t=>t.status!=="completed").sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+ let done=stops.filter(t=>t.status==="completed").sort((a,b)=>new Date(b.completed_at||0)-new Date(a.completed_at||0));
+ let html="";
+ if(!active.length&&!done.length)html='<div class="empty">No stops assigned for this day yet.<br>Keep this page open — new stops appear automatically.</div>';
+ else if(!active.length)html='<div class="empty">🎉 All stops done.</div>';
+ html+=active.map((t,i)=>stopCard(t,i,s)).join("");
+ if(done.length)html+=`<details class="donebox"><summary>✓ ${done.length} done</summary>${done.map((t,i)=>stopCard(t,i,s)).join("")}</details>`;
+ $("content").innerHTML=html;
+ renderAlertBanner();
+ // mark visible stops as seen after the driver has had the page open
+ if(document.visibilityState==="visible"){setTimeout(()=>{let ss=seen();active.forEach(t=>ss.add(t.id));saveSeen(ss)},4000)}
+}
+function renderAlertBanner(){
+ let html="";
+ if(!("Notification" in window))html+=`<div class="notice">Tip: add this page to your Home Screen (Share → Add to Home Screen) for alerts.</div>`;
+ else if(Notification.permission==="default")html+=`<div class="notice">🔔 Get an alert when a new stop is assigned. <button class="btn small" onclick="enableAlerts()">Turn on alerts</button></div>`;
+ else if(Notification.permission==="denied")html+=`<div class="notice warn">Alerts are blocked in this browser's settings. New stops still appear here automatically.</div>`;
+ $("alerts").innerHTML=html;
+}
+async function enableAlerts(){try{let p=await Notification.requestPermission();renderAlertBanner();if(p==="granted")notify("SHIFT alerts on","You'll be alerted here when a stop is assigned.")}catch(e){}}
+let swReg=null;
+if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").then(r=>swReg=r).catch(()=>{})}
+function notify(title,body){
+ if(navigator.vibrate)navigator.vibrate([120,60,120]);
+ if(!("Notification" in window)||Notification.permission!=="granted")return;
+ let opt={body,icon:"icons/icon-192.png",badge:"icons/icon-192.png",tag:"shift-stop",renotify:true,data:{url:location.href}};
+ if(swReg&&swReg.showNotification)swReg.showNotification(title,opt);else try{new Notification(title,opt)}catch(_){}
+}
+function notifyNew(list){
+ let t=list[0];
+ notify(list.length>1?`${list.length} new stops assigned`:`New ${typeKey(t)}: ${t.pickup_name} → ${t.delivery_name}`,
+  `${hm(t.scheduled_at)} · ${t.delivery_address||t.pickup_address||""}`);
+ toast(list.length>1?`${list.length} new stops assigned`:"New stop assigned");
+}
+async function updateTask(id,patch){
+ // single-row update, guarded so a driver can only touch their own assigned stop
+ let r=await db.from("dispatch_tasks").update(patch).eq("id",id).eq("assigned_driver_id",driverId).select("id");
+ if(r.error){alert("Could not save. Check signal and try again.\n"+r.error.message);return false}
+ if(!r.data||!r.data.length){alert("This stop is no longer assigned to you. Refreshing.");await refresh(true);return false}
+ return true;
+}
+async function startStop(id){let t=stops.find(x=>x.id===id);if(!t)return;if(await updateTask(id,{status:"in_progress",completed_at:null})){logEvent(t,"started");await refresh(true)}}
+async function doneStop(id){
+ let t=stops.find(x=>x.id===id);if(!t)return;
+ if(!confirm(`Mark DONE?\n${t.pickup_name} → ${t.delivery_name}`))return;
+ let prevStatus=t.status||"assigned";
+ if(await updateTask(id,{status:"completed",completed_at:new Date().toISOString()})){
+  logEvent(t,"completed");await refresh(true);
+  toast("✓ Marked done","Undo",async()=>{if(await updateTask(id,{status:prevStatus==="completed"?"in_progress":prevStatus,completed_at:null})){logEvent(t,"undo_completed");refresh(true)}});
+ }
+}
+async function flagStop(id,kind){
+ let t=stops.find(x=>x.id===id);if(!t)return;
+ let reason=prompt(`${kind==="missed"?"MISSED":"REFUSED"} — ${t.pickup_name} → ${t.delivery_name}\nWhat happened? (optional)`,"");
+ if(reason===null)return;
+ let note=`🚨 [SHIFT-DRIVER task:${t.id} ${kind}] ${driver.name} reported ${kind.toUpperCase()}: ${t.pickup_name} → ${t.delivery_name}${t.scheduled_at?" ("+hm(t.scheduled_at)+")":""}${reason.trim()?" — "+reason.trim():""}`;
+ let r=await db.from("shift_reminders").insert({note:note.slice(0,480),priority:"high",due_at:new Date().toISOString(),completed:false});
+ if(r.error){alert("Could not notify dispatch. Please call the shipping manager.\n"+r.error.message);return}
+ logEvent(t,kind,{reason:reason.trim()||null});
+ toast("Dispatch was notified");await refresh(true);
+}
+function shiftDay(n){let d=new Date(day+"T12:00:00");d.setDate(d.getDate()+n);day=ymd(d);firstLoad=true;stops=[];refresh(true)}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")refresh()});
+setInterval(()=>{if(document.visibilityState==="visible"||true)refresh()},20000);
+refresh(true);
+</script>
+</body></html>
