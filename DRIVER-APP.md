@@ -1,4 +1,6 @@
-# SHIFT Driver App + Create-Task API — v3.4.0
+# SHIFT Driver App + Create-Task API — v3.4.0 (dashboard updated to v3.4.1)
+
+> **v3.4.1:** Texting drivers and driver links were removed from the dashboard. The assign→notify panel (Text / Share / Copy / Email / Open driver page) and the **📱 Driver link** buttons on driver cards are gone. Drag-and-drop assignment is unchanged. `driver.html` and its files remain in the repo but are not linked from the dashboard UI. Section 2 below is kept for history only.
 
 Live: https://darwillship.github.io/Dispatch-Dashboard/  ·  Driver page: https://darwillship.github.io/Dispatch-Dashboard/driver.html
 
@@ -15,7 +17,7 @@ No Supabase changes are required. Everything uses the existing tables and the sa
 - Every write is a single-row update guarded by `id` **and** `assigned_driver_id`, so a driver can only change their own stop.
 - Install as an app: iPhone → Safari → Share → *Add to Home Screen*. Android → Chrome → ⋮ → *Install app*. (iPhone only allows notifications after it's added to the Home Screen, iOS 16.4+.)
 
-## 2. Notify on assign (dashboard)
+## 2. Notify on assign (dashboard) — REMOVED in v3.4.1
 Dragging a card onto a driver still does the assignment (no change to drag-and-drop). As soon as the drop saves, a panel pops up bottom-right with the message ready to send:
 - **💬 Text** — opens Messages with the text filled in (stop type, time, pickup, delivery, Google Maps directions link, link to the driver page). Pre-fills the recipient if `drivers.phone` has a number.
 - **📤 Share…** (phones/tablets), **📋 Copy**, **✉ Email**, **Open driver page**.

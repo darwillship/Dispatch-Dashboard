@@ -1,8 +1,8 @@
-/* SHIFT Dispatch v3.4.0 — driver app hooks, create-task API, live driver board, suggest order, quick paste.
+/* SHIFT Dispatch v3.4.1 — driver app hooks (no driver texting/links from the dashboard), create-task API, live driver board, suggest order, quick paste.
    Loaded after the main inline script in index.html; reuses its globals (db, tasks, allTasks, drivers, boardDate, LOC, savedLocations, load, render…).
    Production-safety rule: this file only performs single-row writes (one task / one reminder / one schedule row) or new inserts. No bulk clears. */
 (function(){
-const SHIFT_VERSION="v3.4.0";
+const SHIFT_VERSION="v3.4.1";
 window.SHIFT_VERSION=SHIFT_VERSION;
 const HOME=["Darwill McCook","8701 47th St Ste C, McCook, IL 60525"]; // most common origin in History (82 of 112 routes)
 const ALERT_RE=/\[SHIFT-DRIVER task:(\d+) (missed|refused)\]/;
@@ -28,13 +28,6 @@ details.done-fold summary:before{content:"▸ "}details.done-fold[open] summary:
 .driver-alerts.show{display:block}.driver-alerts h4{margin:0 0 8px;font-size:14px;color:#ffb3b3}
 .driver-alert-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:7px 0;border-top:1px solid rgba(239,83,80,.2);font-size:13px}
 .driver-alert-row:first-of-type{border-top:0}.driver-alert-row small{color:#c79a9a;display:block}
-.shift-panel{position:fixed;right:18px;bottom:18px;z-index:9000;width:min(420px,calc(100vw - 24px));background:#0f1925;border:1px solid #2b4a68;border-radius:16px;box-shadow:0 25px 70px rgba(0,0,0,.55);padding:14px;display:none;color:#eaf3fb}
-.shift-panel.show{display:block}.shift-panel h4{margin:0 0 4px;font-size:15px}.shift-panel .sp-sub{color:#8fa0b5;font-size:12px;margin-bottom:8px}
-.shift-panel pre{white-space:pre-wrap;font:12px/1.4 inherit;background:#0a131c;border:1px solid #213549;border-radius:10px;padding:9px;max-height:190px;overflow:auto;margin:0 0 10px;color:#cfdbe7}
-.shift-panel .sp-actions{display:flex;flex-wrap:wrap;gap:6px}.shift-panel .sp-actions a,.shift-panel .sp-actions button{font-size:12px;font-weight:850;padding:8px 10px;border-radius:9px;background:#152334;border:1px solid #2a4056;color:#dce8f4;text-decoration:none;cursor:pointer}
-.shift-panel .sp-actions .sp-primary{background:#0a84ff;border-color:#0a84ff;color:#fff}
-.shift-panel .sp-close{position:absolute;right:10px;top:8px;background:none;border:0;color:#9fb3c6;font-size:20px;cursor:pointer}
-.shift-panel .sp-warn{font-size:11px;color:#ffcf70;margin-top:8px}
 .quick-paste{display:flex;gap:8px}.quick-paste input{flex:1}
 .loc-search{margin-bottom:6px;padding:8px 10px!important;font-size:12px!important}
 .ready-paste{display:flex;gap:6px;margin:0 0 10px}.ready-paste input{flex:1;padding:8px 10px;font-size:12px}.ready-paste button{padding:8px 10px}
@@ -46,59 +39,22 @@ body.light-mode .driver-live .lv-wait{background:#fff0f0!important;color:#b42f2f
 body.light-mode .driver-status-note{background:#f7fafc!important;border-color:#d0dce7!important;color:#24384a!important}
 body.light-mode .driver-alerts{background:#fff4f4!important;border-color:#efb8b8!important}
 body.light-mode .driver-alerts h4{color:#a12a2a!important}
-body.light-mode .shift-panel{background:#fff!important;color:#17212b!important;border-color:#bcd0e2!important}
-body.light-mode .shift-panel pre{background:#f6f9fc!important;color:#22384c!important;border-color:#d4e0ea!important}
 `;
 const st=document.createElement("style");st.textContent=css;document.head.appendChild(st);
 
 /* ---------- small helpers ---------- */
 function driverById(id){return drivers.find(d=>Number(d.id)===Number(id))}
-function driverUrl(id){return new URL("driver.html?d="+encodeURIComponent(id),location.href).href}
-function mapSearch(a){return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(a||"")}
-function mapDir(t){return "https://www.google.com/maps/dir/?api=1&origin="+encodeURIComponent(t.pickup_address||"")+"&destination="+encodeURIComponent(t.delivery_address||"")+"&travelmode=driving"}
-function tType(t){let r=(t.task_type||"").toLowerCase();return r.includes("pickup")?"PICKUP":r.includes("delivery")?"DELIVERY":r.includes("shuttle")?"SHUTTLE":"STOP"}
 function tm(v){return v?new Date(v).toLocaleString([],{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"Time TBD"}
-function smsHref(phone,body){let p=(phone||"").replace(/[^\d+]/g,"");return `sms:${p}${/iPhone|iPad|Mac/.test(navigator.userAgent)?"&":"?"}body=${encodeURIComponent(body)}`}
 async function probeEvents(){if(eventsTable!==null)return eventsTable;try{let r=await db.from("dispatch_events").select("id").limit(1);eventsTable=!r.error}catch(_){eventsTable=false}return eventsTable}
 async function logEvent(taskId,driverId,event,detail){try{if(!(await probeEvents()))return;await db.from("dispatch_events").insert({task_id:taskId,driver_id:driverId,event,detail:detail||null})}catch(_){}}
 
 /* ---------- version label ---------- */
 function versionLabel(){let c=$("conn");if(c&&!document.querySelector(".shift-version")){let v=document.createElement("span");v.className="shift-version";v.textContent=SHIFT_VERSION;c.after(v)}}
 
-/* ---------- notify panel (assign → driver) ---------- */
-function panel(){let p=$("shiftPanel");if(!p){p=document.createElement("div");p.id="shiftPanel";p.className="shift-panel";document.body.appendChild(p)}return p}
-function closePanel(){panel().classList.remove("show")}
-window.SHIFT_closePanel=closePanel;
-function assignMessage(t,d){
- let first=(d.name||"").split(" ")[0];
- return `SHIFT Dispatch — ${first}, new stop assigned
-${tType(t)} · ${tm(t.scheduled_at)}${t.pallet_qty!=null?" · "+t.pallet_qty+" pallets":""}
-Pickup: ${t.pickup_name} — ${t.pickup_address||""}
-Deliver: ${t.delivery_name} — ${t.delivery_address||""}${t.instructions?"\nNotes: "+t.instructions:""}
-Map: ${mapDir(t)}
-Your stops + tap DONE: ${driverUrl(d.id)}`;
-}
-function showNotifyPanel(title,sub,msg,d){
- let p=panel();
- let canShare=!!navigator.share;
- p.innerHTML=`<button class="sp-close" onclick="SHIFT_closePanel()">×</button><h4>${esc(title)}</h4><div class="sp-sub">${esc(sub)}</div><pre id="spMsg">${esc(msg)}</pre>
- <div class="sp-actions"><a class="sp-primary" href="${esc(smsHref(d.phone,msg))}">💬 Text ${esc((d.name||"").split(" ")[0])}</a>${canShare?'<button type="button" id="spShare">📤 Share…</button>':""}<button type="button" id="spCopy">📋 Copy</button><a href="mailto:?subject=${encodeURIComponent("SHIFT stop assigned")}&body=${encodeURIComponent(msg)}">✉ Email</a><a href="${esc(driverUrl(d.id))}" target="_blank" rel="noopener">Open driver page ↗</a></div>
- ${d.phone?"":`<div class="sp-warn">No phone number on file for ${esc(d.name)} — Text opens your messages app without a recipient. Add numbers to the drivers.phone column in Supabase to pre-fill.</div>`}`;
- p.classList.add("show");
- $("spCopy").onclick=async()=>{try{await navigator.clipboard.writeText(msg);$("spCopy").textContent="✓ Copied"}catch(_){prompt("Copy this message:",msg)}};
- if(canShare)$("spShare").onclick=()=>navigator.share({title:"SHIFT stop",text:msg}).catch(()=>{});
- clearTimeout(p._t);p._t=setTimeout(closePanel,45000);
-}
+/* ---------- after assign (v3.4.1: no notify panel / driver texting from the dashboard) ---------- */
 window.SHIFT_onAssigned=function(taskId,driverId){
  let t=tasks.find(x=>x.id===taskId)||allTasks.find(x=>x.id===taskId),d=driverById(driverId);if(!t||!d)return;
  logEvent(t.id,d.id,"assigned",{scheduled_at:t.scheduled_at||null});
- showNotifyPanel(`Assigned to ${d.name}`,`${t.pickup_name} → ${t.delivery_name}. Their driver page already shows this stop — send the link/text so they know.`,assignMessage(t,d),d);
-};
-window.SHIFT_shareDriverLink=function(driverId){
- let d=driverById(driverId);if(!d)return;
- let mine=tasks.filter(t=>Number(t.assigned_driver_id)===Number(d.id)&&t.status!=="completed").sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
- let msg=`SHIFT Dispatch — ${(d.name||"").split(" ")[0]}, your stops (${mine.length}):\n`+mine.map((t,i)=>`${i+1}. ${tType(t)} ${new Date(t.scheduled_at||Date.now()).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})} · ${t.pickup_name} → ${t.delivery_name}`).join("\n")+`\nOpen + tap DONE when finished: ${driverUrl(d.id)}\n(Tip: Add to Home Screen and turn on alerts.)`;
- showNotifyPanel(`Driver link · ${d.name}`,"Send once — the page keeps itself up to date.",msg,d);
 };
 
 /* ---------- driver alerts (Missed / Refused → manager) ---------- */

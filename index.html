@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SHIFT Dispatch</title><meta name="shift-version" content="v3.4.0"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<title>SHIFT Dispatch</title><meta name="shift-version" content="v3.4.1"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#080d14;--panel:#0e1621;--panel2:#111c29;--card:#131f2d;--ink:#f5f7fa;--muted:#8fa0b5;--line:#203246;--blue:#0a84ff;--cyan:#00c6ff;--green:#22c55e;--amber:#ffc107;--purple:#986cff;--red:#ef5350;--steel:#a5b0be;--shadow:0 14px 38px rgba(0,0,0,.25)}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#102c4d 0,#080d14 38%,#060a10 100%);color:var(--ink);font:14px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
@@ -1367,7 +1367,7 @@ function driverColumn(d){
  let stats=`<div class="driver-live"><span title="Scheduled start">⏱ ${esc(start)}</span><span title="Assigned, not started">${nAssigned} assigned</span><span class="lv-prog" title="In progress">${nProg} in prog.</span><span class="${nWaiting?"lv-wait":""}" title="Scheduled time has passed and the driver has not tapped Done">${nWaiting} waiting on Done</span></div>`;
  let foldOpen=(window.SHIFT_openFolds||{})[d.id]?"open":"";
  let fold=done.length?`<details class="done-fold" ${foldOpen} ontoggle="(window.SHIFT_openFolds=window.SHIFT_openFolds||{})[${d.id}]=this.open"><summary>✓ ${done.length} done today</summary>${done.map(taskCard).join("")}</details>`:"";
- let tools=`<div class="driver-tools-row"><button class="mini" type="button" onclick="SHIFT_shareDriverLink(${d.id})" title="Send this driver their stops page">📱 Driver link</button>${active.length>1?`<button class="mini" type="button" onclick="SHIFT_suggestOrder(${d.id})" title="Propose a stop order from History (you approve)">⇅ Suggest order</button>`:""}<button class="mini" type="button" onclick="SHIFT_editDriverStatusNote(${d.id})" title="Status note for this date">✎ Note</button></div>`;
+ let tools=`<div class="driver-tools-row">${active.length>1?`<button class="mini" type="button" onclick="SHIFT_suggestOrder(${d.id})" title="Propose a stop order from History (you approve)">⇅ Suggest order</button>`:""}<button class="mini" type="button" onclick="SHIFT_editDriverStatusNote(${d.id})" title="Status note for this date">✎ Note</button></div>`;
  return `<section class="driver ${unavailable?"driver-unavailable":""}"><div class="driver-head"><div><span class="driver-name">${esc(d.name)}</span><div class="driver-availability ${esc(sch?.status||"unscheduled")}">${esc(schText)}${sch.source==="override"?' <span class="src-tag" title="Daily override for this date">today</span>':""}</div></div><div class="driver-head-tools"><select class="quick-availability" title="Driver status for this date (same data as Driver Schedule → Daily Overrides)" onchange="quickAvailability(${d.id},this.value)"><option value="working" ${sch.status==="working"?"selected":""}>Working</option><option value="pto" ${sch.status==="pto"?"selected":""}>PTO</option><option value="call_off" ${sch.status==="call_off"?"selected":""}>Call Off</option><option value="off" ${sch.status==="off"?"selected":""}>Off</option><option value="messenger" ${sch.status==="messenger"?"selected":""}>Messenger</option></select><span class="count" title="Active / total today">${active.length}${done.length?"/"+mine.length:""}</span></div></div>${statusNote}${noteLines}${stats}${tools}<div class="driver-routes" data-driver="${d.id}" data-drop-driver="${d.id}">${active.length?active.map(taskCard).join(""):'<div class="empty">'+(unavailable?"Unavailable":(done.length?"All done · drop route here":"Drop route here"))+'</div>'}${fold}</div></section>`;
 }
 function bindDrag(){
@@ -1717,7 +1717,7 @@ async function quickAvailability(driverId,status){
  if(r.error)return alert(r.error.message);
  await load();
 }
-</script><script src="shift-features.js?v=3.4.0"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
+</script><script src="shift-features.js?v=3.4.1"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
  <div class="shift-cal" role="dialog" aria-modal="true" aria-label="Select date">
   <div class="shift-cal-head">
    <button type="button" onclick="changeCalMonth(-1)">‹</button>
