@@ -1,3 +1,16 @@
+SHIFT Dispatch v3.7.0 — Verizon Connect Reveal GPS stop times
+
+v3.7.0 (2026-10-07):
+- dispatch_tasks has GPS columns written by the Darwill Verizon GPS bot (see SUPABASE-GPS-TIMES.sql):
+  gps_departed_at, gps_arrived_at, gps_left_destination_at, gps_vehicle_id (-> vehicles), gps_source, gps_updated_at,
+  plus generated gps_drive_minutes (arrived - departed) and gps_dwell_minutes (left destination - arrived).
+- Task cards show "📍 Left 9:12 AM · Arrived 10:03 AM · 51 min drive · 21 min on site · Big Gray" (Central time);
+  hover for full stamps. Edit Task shows the same line read-only (never saved by the form).
+- Route History shows the GPS line per completed route and has "Export tasks CSV" (date range, all statuses, GPS columns in CT).
+- Time Sheets → Activities CSV now includes the linked task's route and GPS columns.
+- Dashboard writes to dispatch_tasks are partial updates of the fields they change, so they never overwrite gps_* values.
+  Status / completed_at behavior is unchanged (the bot sets status='completed' and completed_at itself).
+
 SHIFT Dispatch v3.6.0 — Trucks per driver (Verizon Connect Reveal names)
 
 v3.6.0 (2026-10-07):
@@ -39,4 +52,4 @@ New in v3.4.0 (full details: DRIVER-APP.md):
 - Suggest order (from History, only applied after you accept).
 - Location search, Task Type no longer defaults to shuttle, one driver status field.
 
-Files: index.html, shift-features.js, timesheet-features.js, truck-features.js, driver.html, sw.js, driver-manifest.webmanifest, icons/.
+Files: index.html, shift-features.js, timesheet-features.js, truck-features.js, gps-features.js, driver.html, sw.js, driver-manifest.webmanifest, icons/.

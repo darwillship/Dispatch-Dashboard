@@ -1,8 +1,8 @@
-/* SHIFT Dispatch v3.6.0 — driver app hooks (no driver texting/links from the dashboard), create-task API, live driver board, suggest order, quick paste.
+/* SHIFT Dispatch v3.7.0 — driver app hooks (no driver texting/links from the dashboard), create-task API, live driver board, suggest order, quick paste.
    Loaded after the main inline script in index.html; reuses its globals (db, tasks, allTasks, drivers, boardDate, LOC, savedLocations, load, render…).
    Production-safety rule: this file only performs single-row writes (one task / one reminder / one schedule row) or new inserts. No bulk clears. */
 (function(){
-const SHIFT_VERSION="v3.6.0";
+const SHIFT_VERSION="v3.7.0";
 window.SHIFT_VERSION=SHIFT_VERSION;
 const HOME=["Darwill McCook","8701 47th St Ste C, McCook, IL 60525"]; // most common origin in History (82 of 112 routes)
 const ALERT_RE=/\[SHIFT-DRIVER task:(\d+) (missed|refused)\]/;

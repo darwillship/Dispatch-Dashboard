@@ -189,6 +189,8 @@ window.SHIFT_viewPretrip=async function(id){
 };
 
 /* ---------- CSV ---------- */
+/* v3.7.0: linked dispatch task route + Verizon GPS times (blank when no task / no GPS yet) */
+function taskGps(id){let t=id!=null?(allTasks||[]).find(x=>Number(x.id)===Number(id)):null;let r={DispatchTaskRoute:t?`${t.pickup_name||""} → ${t.delivery_name||""}`:""};return Object.assign(r,typeof SHIFT_gpsCsvFields==="function"?SHIFT_gpsCsvFields(t):{})}
 function csvDownload(name,rows){
   if(!rows.length)return alert("Nothing to export for this date range.");
   let h=Object.keys(rows[0]),q=v=>`"${String(v??"").replaceAll('"','""')}"`;
@@ -206,7 +208,7 @@ window.SHIFT_tsCsv=async function(kind){
     let ids=PT.shifts.map(s=>s.id),all=[];
     for(let i=0;i<ids.length;i+=100){let r=await db.from("driver_activities").select("*").in("shift_id",ids.slice(i,i+100)).order("started_at");if(r.error)return alert("Could not load activities: "+r.error.message);all=all.concat(r.data||[])}
     let sh={};PT.shifts.forEach(s=>sh[s.id]=s);
-    return csvDownload(`activities_${tag}.csv`,all.map(x=>({Date:sh[x.shift_id]?.work_date||ymd(x.started_at),Driver:driverName(x.driver_id,sh[x.shift_id]?.driver_name),ShiftID:x.shift_id,Activity:x.activity_type,Start:dt(x.started_at),End:dt(x.ended_at),Minutes:x.minutes??"",Location:x.location||"",Address:x.address||"",Reason:x.reason||"",Detail:x.detail?JSON.stringify(x.detail):"",Notes:x.notes||"",DispatchTaskID:x.dispatch_task_id??""})));
+    return csvDownload(`activities_${tag}.csv`,all.map(x=>({Date:sh[x.shift_id]?.work_date||ymd(x.started_at),Driver:driverName(x.driver_id,sh[x.shift_id]?.driver_name),ShiftID:x.shift_id,Activity:x.activity_type,Start:dt(x.started_at),End:dt(x.ended_at),Minutes:x.minutes??"",Location:x.location||"",Address:x.address||"",Reason:x.reason||"",Detail:x.detail?JSON.stringify(x.detail):"",Notes:x.notes||"",DispatchTaskID:x.dispatch_task_id??"",...taskGps(x.dispatch_task_id)})));
   }
 };
 })();
