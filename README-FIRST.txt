@@ -1,3 +1,13 @@
+SHIFT Dispatch v3.6.0 — Trucks per driver (Verizon Connect Reveal names)
+
+v3.6.0 (2026-10-07):
+- vehicles now holds the 7 Reveal trucks: Big Blue, Big Gray, Frey, Hillside Van, McCook Van, Sterling, White Panel Truck.
+- Driver Schedule → Weekly Schedule: "Default truck" per driver (saves immediately → drivers.default_vehicle_id).
+- Driver Schedule → Daily Overrides: "Truck" per driver/date (→ driver_schedule.vehicle_id, saved with Save Overrides;
+  picking a truck turns Override on for that date).
+- Driver card header shows the truck for the board date ("🚛 Big Blue", tagged "this date" when it is a daily override).
+- GPS bot lookup: view driver_daily_vehicle / function driver_vehicle_for_date(date) — see SUPABASE-TRUCKS.sql.
+
 SHIFT Dispatch v3.5.0 — Driver Time Sheet integration
 
 v3.5.0 (2026-10-07):
@@ -29,4 +39,4 @@ New in v3.4.0 (full details: DRIVER-APP.md):
 - Suggest order (from History, only applied after you accept).
 - Location search, Task Type no longer defaults to shuttle, one driver status field.
 
-Files: index.html, shift-features.js, timesheet-features.js, driver.html, sw.js, driver-manifest.webmanifest, icons/.
+Files: index.html, shift-features.js, timesheet-features.js, truck-features.js, driver.html, sw.js, driver-manifest.webmanifest, icons/.
