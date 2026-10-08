@@ -64,7 +64,7 @@ const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 function ymd(v){let d=new Date(v);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")}
-function hm(v){return v?new Date(v).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"Time TBD"}
+function hm(v){return v?new Date(v).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"ASAP"}
 function fmtT(v){if(!v)return "";let [h,m]=v.slice(0,5).split(":").map(Number);return `${h%12||12}:${String(m).padStart(2,"0")} ${h>=12?"PM":"AM"}`}
 const qs=new URLSearchParams(location.search);
 let driverId=Number(qs.get("d")||qs.get("driver")||localStorage.getItem("shift-driver-id")||0)||null;
@@ -126,7 +126,8 @@ function flagFor(t){return alertsOpen.find(a=>new RegExp("\\[SHIFT-DRIVER task:"
 function stopCard(t,i,s){
  let st=t.status||"assigned",done=st==="completed",tk=typeKey(t),fl=flagFor(t),isNew=!done&&!s.has(t.id);
  let flagKind=fl?(fl.note.match(/ (missed|refused)\]/)||[])[1]:null;
- let actions=done?`<div class="info">✓ Done ${t.completed_at?hm(t.completed_at):""}</div>`:`<div class="actions">
+ let auto=t.status_source==="auto_gps";
+ let actions=done?`<div class="info">✓ Done ${t.completed_at?hm(t.completed_at):""}${auto?' · <span title="Marked done automatically when the truck left the stop (GPS)">auto (GPS)</span>':""}</div>${auto&&!fl?`<div class="actions"><button class="miss-btn" onclick="flagStop(${t.id},'missed')">Missed</button><button class="ref-btn" onclick="flagStop(${t.id},'refused')">Refused</button></div>`:""}`:`<div class="actions">
   ${st!=="in_progress"?`<button class="start-btn" onclick="startStop(${t.id})">▶ Start / On my way</button>`:""}
   <button class="done-btn" onclick="doneStop(${t.id})">✓ DONE</button>
   <button class="miss-btn" onclick="flagStop(${t.id},'missed')">Missed</button>

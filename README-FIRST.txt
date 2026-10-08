@@ -1,3 +1,20 @@
+SHIFT Dispatch v3.12.0 (2026-10-08): GPS TIMES BELONG TO THE RIGHT TASK + AUTO STATUS + TIME OPTIONAL.
+- Matching rule (vzc-sync v9): a task/stop only takes truck movement that starts at or after
+  min(created_at - 10 min, scheduled time). A task typed in after the fact (no time, or a time at/before the visit) may take
+  an earlier visit only if no other task/stop owns it. One physical visit (same truck, arrival within 3 min) has ONE owner -
+  visits already saved on any task/stop that day count, so a filled route can no longer lend its stops to a new task.
+  Typed (manual) GPS times still win.
+- Auto status (single tasks): truck leaves the pickup -> In progress; truck reaches the delivery -> In progress; truck LEAVES the
+  delivery -> Completed with completed_at = the arrival time (the driver keeps Missed/Refused for the whole visit). Deliveries to
+  McCook complete on arrival. Routes: leaving the start -> In progress (completion still comes from the stops).
+  Forward only (Assigned -> In progress -> Completed); never touches Pending/Planned, Completed, anything Missed/Refused
+  (driver report, open or resolved), routes 52/58/61/78/98/107/117/140, combined 161/162, or past work dates.
+  Auto changes show a small "auto" tag (cards, driver app "auto (GPS)", CSV "Status Source"). Any manual status change
+  after an auto change (dashboard Start/Complete, driver Start/Done/Undo) flips it to manual and the updater stops for that task.
+  DB: dispatch_tasks.status_source / status_auto_at, trigger dispatch_tasks_status_manual, rpc vzc_auto_status (service_role only).
+- Task form: Date (defaults to today's board) + optional Time. Blank time = "ASAP" (scheduled_at stays empty). The ASAP button
+  clears a time. Cards, driver app and CSV show ASAP; quick paste without "@ time" is ASAP too (was 8:00 AM).
+
 SHIFT Dispatch v3.11.0 (2026-10-08): AUTOMATIC TRUCK ASSIGNMENT + unplanned stops follow the schedule.
 - When a truck starts and exactly one scheduled, on-shift driver has no truck, the Verizon updater (vzc-sync) sets that driver's truck for the date. It shows a small "auto" badge on the driver card and in Driver Schedule -> Daily Overrides; changing the truck there makes it a manual pick, which is never overwritten.
 - If two or more drivers fit, nothing is assigned. A blue strip asks "Big Blue started 5:02 AM. Juan or Jay?" - one click sets it, the X leaves it unassigned. One decision per truck per date, so it never asks again.

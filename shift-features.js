@@ -2,7 +2,7 @@
    Loaded after the main inline script in index.html; reuses its globals (db, tasks, allTasks, drivers, boardDate, LOC, savedLocations, load, render…).
    Production-safety rule: this file only performs single-row writes (one task / one reminder / one schedule row) or new inserts. No bulk clears. */
 (function(){
-const SHIFT_VERSION="v3.11.0";
+const SHIFT_VERSION="v3.12.0";
 window.SHIFT_VERSION=SHIFT_VERSION;
 const HOME=["Darwill McCook","8701 47th St Ste C, McCook, IL 60525"]; // most common origin in History (82 of 112 routes)
 const ALERT_RE=/\[SHIFT-DRIVER task:(\d+) (missed|refused)\]/;
@@ -44,7 +44,7 @@ const st=document.createElement("style");st.textContent=css;document.head.append
 
 /* ---------- small helpers ---------- */
 function driverById(id){return drivers.find(d=>Number(d.id)===Number(id))}
-function tm(v){return v?new Date(v).toLocaleString([],{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"Time TBD"}
+function tm(v){return v?new Date(v).toLocaleString([],{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"ASAP"}
 async function probeEvents(){if(eventsTable!==null)return eventsTable;try{let r=await db.from("dispatch_events").select("id").limit(1);eventsTable=!r.error}catch(_){eventsTable=false}return eventsTable}
 async function logEvent(taskId,driverId,event,detail){try{if(!(await probeEvents()))return;await db.from("dispatch_events").insert({task_id:taskId,driver_id:driverId,event,detail:detail||null})}catch(_){}}
 
@@ -159,7 +159,7 @@ window.SHIFT_buildTask=function(input){
  let today=ymd(new Date());
  let sched=i.scheduled_at?new Date(i.scheduled_at).toISOString():null;
  let work=i.work_date||(sched?ymd(sched):today);
- if(!sched)sched=localIso(work,i.time||"08:00");
+ if(!sched&&i.time)sched=localIso(work,i.time); // v3.12.0: no time given → ASAP (scheduled_at null)
  return {work_date:work,title:pu[0]+" - "+de[0],pickup_name:pu[0],pickup_address:pu[1]||null,delivery_name:de[0],delivery_address:de[1]||null,scheduled_at:sched,priority:["high","low","normal"].includes(i.priority)?i.priority:"normal",job_client:i.job_client||null,material:i.material||null,pallet_qty:i.pallet_qty!=null&&i.pallet_qty!==""?Number(i.pallet_qty):null,task_type:type,instructions:i.instructions||null,status:"pending",planning_stage:"ready",assigned_driver_id:null,sort_order:999};
 };
 window.SHIFT_createTask=async function(input){
@@ -199,7 +199,8 @@ window.SHIFT_fillFromPaste=function(){
  let t;try{t=SHIFT_buildTask({line,work_date:boardDate})}catch(e){return alert(e.message)}
  setPicker("pickup",t.pickup_name,t.pickup_address);setPicker("delivery",t.delivery_name,t.delivery_address);
  $("type").value=t.task_type;$("priority").value=t.priority;if(t.pallet_qty!=null)$("pallets").value=t.pallet_qty;
- let d=new Date(t.scheduled_at);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());$("scheduled").value=d.toISOString().slice(0,16);
+ let v="";if(t.scheduled_at){let d=new Date(t.scheduled_at);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());v=d.toISOString().slice(0,16)}
+ if(typeof setSched==="function")setSched(v||t.work_date||boardDate);else $("scheduled").value=v;
  typeTouched=true;
 };
 /* one-line paste box at the top of Ready to Assign */

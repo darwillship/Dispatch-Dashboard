@@ -283,8 +283,9 @@ form.onsubmit=async function(e){
   let bad=rows.findIndex(s=>!s.location_name||!s.location_address);
   if(bad>=0)return alert(`Stop ${bad+1}: choose a location (or type a name and full address).`);
   let locErr=null;try{await saveLocationIfRequested("pickup",p)}catch(err){locErr=err}
+  if(typeof syncSched==="function")syncSched();
   let last=rows[rows.length-1],sv=$("scheduled").value;
-  let payload={work_date:sv?sv.slice(0,10):boardDate,title:`${p[0]} - ${last.location_name} (${rows.length} stop${rows.length===1?"":"s"})`,
+  let payload={work_date:typeof schedWorkDate==="function"?schedWorkDate():(sv?sv.slice(0,10):boardDate),title:`${p[0]} - ${last.location_name} (${rows.length} stop${rows.length===1?"":"s"})`,
     pickup_name:p[0],pickup_address:p[1],delivery_name:last.location_name,delivery_address:last.location_address,
     scheduled_at:sv?new Date(sv).toISOString():null,priority:$("priority").value,job_client:$("job").value||null,material:$("material").value||null,
     pallet_qty:$("pallets").value?Number($("pallets").value):null,task_type:$("type").value,instructions:$("notes").value||null,is_route:true};

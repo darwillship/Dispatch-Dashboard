@@ -137,9 +137,9 @@ window.SHIFT_taskCsvRows=function(from,to){
   return (allTasks||[]).filter(t=>{let d=taskDate(t)||ctYmd(t.created_at);return (!from||d>=from)&&(!to||d<=to)})
     .sort((a,b)=>String(taskDate(a)).localeCompare(String(taskDate(b)))||Number(a.assigned_driver_id||0)-Number(b.assigned_driver_id||0)||Number(a.sort_order||0)-Number(b.sort_order||0))
     .map(t=>{let d=(drivers||[]).find(x=>Number(x.id)===Number(t.assigned_driver_id));
-      return Object.assign({"Task ID":t.id,"Work Date":taskDate(t)||"",Type:t.task_type||"",Status:t.status||"",Stage:t.planning_stage||"",Priority:t.priority||"",Driver:d?d.name:"",
+      return Object.assign({"Task ID":t.id,"Work Date":taskDate(t)||"",Type:t.task_type||"",Status:t.status||"","Status Source":t.status_source==="auto_gps"?"auto (GPS)":t.status_source||"",Stage:t.planning_stage||"",Priority:t.priority||"",Driver:d?d.name:"",
         Pickup:t.pickup_name||"","Pickup Address":t.pickup_address||"",Delivery:t.delivery_name||"","Delivery Address":t.delivery_address||"","Job / Client":t.job_client||"",Material:t.material||"",Pallets:t.pallet_qty??"",
-        "Scheduled (CT)":ctStamp(t.scheduled_at),"Completed (CT)":ctStamp(t.completed_at)},SHIFT_gpsCsvFields(t),{Instructions:t.instructions||""},SHIFT_gpsDetailCsvFields(t))});
+        "Scheduled (CT)":t.scheduled_at?ctStamp(t.scheduled_at):"ASAP","Completed (CT)":ctStamp(t.completed_at)},SHIFT_gpsCsvFields(t),{Instructions:t.instructions||""},SHIFT_gpsDetailCsvFields(t))});
 };
 window.SHIFT_exportTasksCsv=function(){
   let from=$("taskExpFrom").value,to=$("taskExpTo").value;
