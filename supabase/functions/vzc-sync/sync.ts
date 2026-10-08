@@ -13,7 +13,7 @@ const LIVE_STATE: Record<string, string> = { Moving: "Moving", Idle: "Idle", Sto
 const TASK_COLS = "id,title,status,task_type,work_date,scheduled_at,completed_at,assigned_driver_id,pickup_name,pickup_address,delivery_name,delivery_address,is_route,combined_into_task_id,gps_departed_at,gps_arrived_at,gps_left_destination_at,gps_vehicle_id,gps_source,gps_origin_engine_on_at,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_returned_base_at,gps_match_method,gps_match_distance_m";
 const STOP_COLS = "id,task_id,seq,location_name,location_address,status,gps_arrived_at,gps_departed_at,gps_vehicle_id,gps_source,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_match_method,gps_match_distance_m";
 
-export interface SyncOptions { dryRun: boolean; dates?: string[]; vehicles?: string[]; source?: string }
+export interface SyncOptions { dryRun: boolean; dates?: string[]; vehicles?: string[]; source?: string; recompute?: boolean }
 export interface Env { username: string; password: string; appId: string; supabaseUrl: string; serviceKey: string; excludeDrivers: number[]; allowOtherTruck: boolean }
 
 // ---------------- Verizon client ----------------
@@ -44,17 +44,33 @@ class Vzc {
     if (!this.dryRun) await this.db.from("vzc_token").upsert({ id: 1, token: tok, fetched_at: new Date().toISOString() });
     return tok;
   }
+  errors: string[] = [];
+  // Safe diagnostics for non-OK answers: status, path (no query), Verizon error headers, short body — token/password redacted.
+  private async note(path: string, r: Response) {
+    let txt = "";
+    try { txt = (await r.text()).slice(0, 300); } catch { /* ignore */ }
+    if (this.errors.length >= 12) return;
+    const hdr = ["x-error-detail-header", "x-mashery-error-code", "x-mashery-error-detail", "retry-after", "www-authenticate"]
+      .map((h) => r.headers.get(h) ? `${h}=${r.headers.get(h)}` : "").filter(Boolean).join("; ");
+    let msg = `HTTP ${r.status} ${path.replace(/\?.*/, "")} ${hdr} ${txt}`.replace(/\s+/g, " ").trim();
+    if (memToken?.token && memToken.token.length >= 8) msg = msg.replaceAll(memToken.token, "***");
+    if (this.env.password.length >= 6) msg = msg.replaceAll(this.env.password, "***");
+    this.errors.push(msg.slice(0, 400));
+  }
   async get(path: string): Promise<{ status: number; body: any }> {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const tok = await this.token(attempt > 0);
+    let renewed = false, force = false;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const tok = await this.token(force);
+      force = false;
       this.calls++;
       const r = await fetch(API + path, {
         headers: { Authorization: `Atmosphere atmosphere_app_id=${this.env.appId}, Bearer ${tok}`, Accept: "application/json" },
         signal: AbortSignal.timeout(30000),
       });
-      if (r.status === 401 && attempt === 0) { memToken = null; continue; }
-      if (r.status === 204) return { status: 204, body: null };
-      if (!r.ok) return { status: r.status, body: null };
+      if (r.status === 401 && !renewed) { await r.body?.cancel(); memToken = null; renewed = force = true; continue; }
+      if ((r.status === 403 || r.status === 429) && attempt < 2) { await this.note(path, r); await new Promise((ok) => setTimeout(ok, 1500 * (attempt + 1))); continue; }
+      if (r.status === 204) { await r.body?.cancel(); return { status: 204, body: null }; }
+      if (!r.ok) { await this.note(path, r); return { status: r.status, body: null }; }
       return { status: r.status, body: await r.json() };
     }
     return { status: 401, body: null };
@@ -80,19 +96,20 @@ export async function runSync(env: Env, opt: SyncOptions) {
   const vzc = new Vzc(env, db, opt.dryRun);
   const warnings: string[] = [];
   if (env.appId === "DarwillDispatchDashboard") warnings.push("VZC_APP_ID not set — using a placeholder app id");
-  const summary: any = { ok: true, dry_run: opt.dryRun, source: opt.source ?? "manual", started_at: nowIso, warnings, vehicles: [], dates: [] };
+  const summary: any = { ok: true, dry_run: opt.dryRun, recompute: !!opt.recompute, source: opt.source ?? "manual", started_at: nowIso, warnings, vehicles: [], dates: [] };
 
   // 1) vehicles with a Reveal number
   const { data: vrows, error: verr } = await db.from("vehicles").select("id,name,vzc_vehicle_number").not("vzc_vehicle_number", "is", null).order("id");
   if (verr) throw new Error("read vehicles: " + verr.message);
   let vehicles = (vrows || []) as { id: number; name: string; vzc_vehicle_number: string }[];
   if (opt.vehicles?.length) { const want = opt.vehicles.map((s) => String(s).toLowerCase()); vehicles = vehicles.filter((v) => want.includes(String(v.id)) || want.includes(v.name.toLowerCase())); }
-  const { data: liveRows } = await db.from("vehicle_live_location").select("vehicle_id,last_track_fetch_at,last_track_update_utc");
+  const { data: liveRows, error: lerr } = await db.from("vehicle_live_location").select("vehicle_id,last_track_fetch_at,last_track_update_utc");
+  if (lerr) warnings.push("read vehicle_live_location: " + lerr.message);
   const liveMeta = new Map((liveRows || []).map((r: any) => [r.vehicle_id, r]));
 
   // 2) live location for every truck
   const loc = new Map<number, { update: number | null; row: any }>();
-  await pool(vehicles, 4, async (v) => {
+  await pool(vehicles, 2, async (v) => {   // 2 at a time: Verizon throttles bursts
     const r = await vzc.get(`/rad/v1/vehicles/${encNum(v.vzc_vehicle_number)}/location`);
     const b = r.body;
     const update = b ? M.utc(b.UpdateUTC) : null;
@@ -118,7 +135,8 @@ export async function runSync(env: Env, opt: SyncOptions) {
   const writableFrom = addDays(today, -WRITE_MAX_AGE_DAYS);
 
   // 4) geocode cache
-  const { data: gc } = await db.from("geocode_cache").select("address_norm,lat,lon,status,geocoded_at");
+  const { data: gc, error: gerr } = await db.from("geocode_cache").select("address_norm,lat,lon,status,geocoded_at");
+  if (gerr) warnings.push("read geocode_cache: " + gerr.message);
   const geo = new Map<string, any>((gc || []).map((g: any) => [g.address_norm, g]));
   let geocodedThisRun = 0;
   async function placeFor(label: string, address: string | null): Promise<M.Place | null> {
@@ -147,12 +165,18 @@ export async function runSync(env: Env, opt: SyncOptions) {
 
     const { data: trows, error: terr } = await db.from("dispatch_tasks").select(TASK_COLS).eq("work_date", date).order("id");
     if (terr) throw new Error("read tasks: " + terr.message);
-    const { data: plan } = await db.rpc("driver_vehicle_for_date", { p_work_date: date });
+    const { data: plan, error: perr } = await db.rpc("driver_vehicle_for_date", { p_work_date: date });
+    if (perr) warnings.push("planned trucks (driver_vehicle_for_date): " + perr.message);
     const planned = new Map<number, number | null>((plan || []).map((p: any) => [p.driver_id, p.vehicle_id]));
     const routeIds = (trows || []).filter((t: any) => t.is_route).map((t: any) => t.id);
-    const { data: srows } = routeIds.length ? await db.from("dispatch_task_stops").select(STOP_COLS).in("task_id", routeIds).order("seq") : { data: [] as any[] };
+    const { data: srows, error: serr } = routeIds.length ? await db.from("dispatch_task_stops").select(STOP_COLS).in("task_id", routeIds).order("seq") : { data: [] as any[], error: null };
+    if (serr) throw new Error("read route stops: " + serr.message);
 
     const targets: M.TaskTarget[] = [];
+    if (opt.recompute && opt.dryRun) {   // compare mode: pretend nothing is stored yet (never used for writes)
+      for (const t of (trows || []) as any[]) for (const c of Object.keys(t)) if (c.startsWith("gps_")) t[c] = null;
+      for (const s of (srows || []) as any[]) { for (const c of Object.keys(s)) if (c.startsWith("gps_")) s[c] = null; s.status = "pending"; }
+    }
     for (const t of (trows || []) as any[]) {
       const skip = (why: string) => dsum.skipped.push({ task_id: t.id, why });
       if (t.combined_into_task_id) { skip("combined into route #" + t.combined_into_task_id); continue; }
@@ -201,12 +225,15 @@ export async function runSync(env: Env, opt: SyncOptions) {
         const hist = await vzc.get(`/rad/v1/vehicles/${encNum(v.vzc_vehicle_number)}/status/history?startdatetimeutc=${fmtUtc(fetchFrom)}&enddatetimeutc=${fmtUtc(winEnd)}`);
         // segments (ignition on/off) return 24 h from the start time: one call for today, two for yesterday (morning only).
         // The 6 h look-back before midnight is covered by the history plots above.
-        const segBodies: any[] = [];
+        const segBodies: any[] = [], segStatus: number[] = [];
         for (let s = winStart; s < winEnd; s += 24 * 3600e3) {
           const r = await vzc.get(`/rad/v1/vehicles/${encNum(v.vzc_vehicle_number)}/segments?startdateutc=${fmtUtc(s)}`);
+          segStatus.push(r.status);
           if (r.body) segBodies.push(...(Array.isArray(r.body) ? r.body : [r.body]));
         }
         if (hist.status >= 400) warnings.push(`${v.name}: history HTTP ${hist.status}`);
+        const vsum = summary.vehicles.find((x: any) => x.id === v.id);
+        if (vsum) (vsum.tracks ??= []).push({ date, history_http: hist.status, plots: Array.isArray(hist.body) ? hist.body.length : 0, segments_http: segStatus, segments: segBodies.length });
         const tl = M.buildTimeline(M.parsePlots(Array.isArray(hist.body) ? hist.body : []), M.parseSegments(segBodies), fetchFrom, winEnd);
         trackCache.set(key, { vehicleId: v.id, name: v.name, tl });
         if (!opt.dryRun) await db.from("vehicle_live_location").update({ last_track_fetch_at: nowIso, last_track_update_utc: new Date(l.update).toISOString() }).eq("vehicle_id", v.id);
@@ -240,7 +267,9 @@ export async function runSync(env: Env, opt: SyncOptions) {
     }
   }
 
+  summary.vehicles.sort((a: any, b: any) => a.id - b.id);
   summary.api_calls = vzc.calls;
+  summary.api_errors = vzc.errors;
   summary.geocoded = geocodedThisRun;
   summary.ms = Date.now() - t0;
   if (!opt.dryRun) {

@@ -18,12 +18,17 @@ v3.9.0 (2026-10-08):
   vehicles.vzc_vehicle_number. New tables: vehicle_live_location, geocode_cache, vzc_sync_runs, vzc_token (service only).
 - Secrets (never in the repo/chat): Supabase Dashboard → Edge Functions → Secrets: VZC_USERNAME
   (REST_DarwillDispatchDashboard_6200@1185217.com), VZC_PASSWORD, VZC_APP_ID. Optional: VZC_EXCLUDE_DRIVER_IDS
-  (comma list), VZC_ALLOW_OTHER_TRUCK=true. Until they are set the function answers 503 "missing VZC_USERNAME/VZC_PASSWORD".
-- Go live: see the GO-LIVE block at the top of SUPABASE-VZC-SYNC.sql (Vault secret vzc_sync_service_key = legacy
-  service_role JWT, then select cron.schedule('vzc-sync', '*/3 * * * *', $c$select public.vzc_sync_invoke()$c$);).
-  Stop: select cron.unschedule('vzc-sync');
+  (comma list), VZC_ALLOW_OTHER_TRUCK=1. Until they are set the function answers 503 "missing VZC_USERNAME/VZC_PASSWORD".
+- Invoke auth: the function runs with verify_jwt = false and only accepts header x-vzc-token equal to the Vault secret
+  'vzc_sync_invoke_token' (64 hex chars generated inside Postgres — nobody copies or sees it), or the exact service_role
+  key as Bearer. Everything else gets 401. public.vzc_sync_invoke() sends the token; it is not callable by anon/authenticated.
+- Dry test (writes nothing):  select public.vzc_sync_invoke(true);   any date, ignoring stored times:
+    select public.vzc_sync_invoke(true, '{"dates":["2026-10-07"],"recompute":true}');
+  then: select status_code, content::json->'summary' from net._http_response order by id desc limit 1;
+- Go live (NOT done yet): select cron.schedule('vzc-sync', '*/3 * * * *', $c$select public.vzc_sync_invoke()$c$);
+  Stop: select cron.unschedule('vzc-sync');   (GO-LIVE block at the bottom of SUPABASE-VZC-SYNC.sql)
 - Deploy (bundle keeps the upload small): deno bundle --minify --external 'npm:*' -o index.js supabase/functions/vzc-sync/index.ts
-  then deploy index.js as the function's index.ts with verify_jwt on.
+  then deploy index.js as the function's index.ts with verify_jwt OFF (the function checks x-vzc-token itself).
 
 SHIFT Dispatch v3.8.0 — Multi-stop routes
 

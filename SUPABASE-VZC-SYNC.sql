@@ -1,8 +1,10 @@
 -- SHIFT Dispatch v3.9.0 — Verizon Connect (Reveal / Fleetmatics REST) → Dispatch GPS updater.
 -- Applied to project hqhfstosclasgwgxubip on 2026-10-08 as migration "vzc_gps_sync".
 -- Additive only. NOT LIVE: no cron job is scheduled by this file (see "GO-LIVE" at the bottom).
+-- Follow-up migrations (same day): "vzc_invoke_token" (random invoke token in Vault + verify_jwt=false function auth)
+-- and "vzc_service_grants" (service_role table grants the function needs).
 -- No credentials live here: VZC_USERNAME / VZC_PASSWORD / VZC_APP_ID are Edge Function secrets, and the
--- cron invoke key is a Vault secret that Jonathan creates himself.
+-- cron invoke token is generated inside Postgres (Vault) — nobody copies a key.
 
 -- 0. Self-check: lock the dispatch tables, checksum every existing column, run the DDL, checksum again,
 --    and abort (roll back everything) if a single existing value changed.
@@ -165,35 +167,68 @@ grant select on public.dispatch_route_stops_v to anon, authenticated;
 create extension if not exists pg_net with schema extensions;
 create extension if not exists pg_cron;
 
--- Calls the vzc-sync Edge Function with the service_role key that Jonathan stores in Vault as 'vzc_sync_service_key'.
--- Returns the pg_net request id (or NULL with a notice when the Vault secret is missing). Not callable by anon/authenticated.
-create or replace function public.vzc_sync_invoke(p_dry_run boolean default false)
-returns bigint language plpgsql security definer set search_path = '' as $$
-declare v_key text; v_id bigint;
+-- ------------------------------------------------------------------------------------------------------------
+-- Invoke auth (migration "vzc_invoke_token", 2026-10-08): pg_cron → vzc-sync is authenticated with a random token
+-- that is generated INSIDE Postgres and kept in Vault as 'vzc_sync_invoke_token'. Nobody types, copies or sees it.
+-- The function (deployed with verify_jwt = false) compares the x-vzc-token header against the Vault value
+-- (constant-time) and answers 401 to anything else. Rotate: select vault.update_secret(id, encode(extensions.gen_random_bytes(32),'hex'))
+-- from vault.secrets where name = 'vzc_sync_invoke_token';  (the function picks the new value up within 5 minutes)
+do $tok$
 begin
-  select decrypted_secret into v_key from vault.decrypted_secrets where name = 'vzc_sync_service_key' limit 1;
-  if v_key is null then
-    raise notice 'vzc_sync_invoke: Vault secret vzc_sync_service_key is not set — nothing called';
+  if not exists (select 1 from vault.secrets where name = 'vzc_sync_invoke_token') then
+    perform vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'), 'vzc_sync_invoke_token',
+                                'vzc-sync invoke token (generated in Postgres, never printed)');
+  end if;
+end $tok$;
+
+-- Service-role-only lookup used by the Edge Function (its built-in SUPABASE_SERVICE_ROLE_KEY client).
+create or replace function public.vzc_sync_expected_token()
+returns text language sql stable security definer set search_path = '' as $$
+  select decrypted_secret from vault.decrypted_secrets where name = 'vzc_sync_invoke_token' limit 1
+$$;
+revoke all on function public.vzc_sync_expected_token() from public, anon, authenticated;
+grant execute on function public.vzc_sync_expected_token() to service_role;
+
+-- pg_cron / SQL editor entry point. p_options is merged into the request body, e.g.
+--   select public.vzc_sync_invoke(true, '{"dates":["2026-10-07"],"recompute":true}');
+-- (dry_run always comes from p_dry_run; "recompute" is honoured only in dry runs).
+drop function if exists public.vzc_sync_invoke(boolean);
+create or replace function public.vzc_sync_invoke(p_dry_run boolean default false, p_options jsonb default '{}'::jsonb)
+returns bigint language plpgsql security definer set search_path = '' as $$
+declare v_tok text; v_id bigint;
+begin
+  select decrypted_secret into v_tok from vault.decrypted_secrets where name = 'vzc_sync_invoke_token' limit 1;
+  if v_tok is null then
+    raise notice 'vzc_sync_invoke: Vault secret vzc_sync_invoke_token is missing — nothing called';
     return null;
   end if;
   select net.http_post(
     url := 'https://hqhfstosclasgwgxubip.supabase.co/functions/v1/vzc-sync',
-    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer ' || v_key),
-    body := jsonb_build_object('dry_run', p_dry_run, 'source', 'pg_cron'),
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-vzc-token', v_tok),
+    body := jsonb_build_object('source', 'pg_cron') || coalesce(p_options, '{}'::jsonb) || jsonb_build_object('dry_run', p_dry_run),
     timeout_milliseconds := 120000
   ) into v_id;
   return v_id;
 end $$;
-revoke all on function public.vzc_sync_invoke(boolean) from public, anon, authenticated;
+revoke all on function public.vzc_sync_invoke(boolean, jsonb) from public, anon, authenticated;
+
+-- ------------------------------------------------------------------------------------------------------------
+-- service_role grants (migration "vzc_service_grants", 2026-10-08): this project's default privileges did not give
+-- service_role DML, so the function could not read route stops / planned trucks or write its own tables.
+-- Least privilege, service_role only (anon/authenticated unchanged).
+grant select, update on public.dispatch_task_stops to service_role;          -- read stops, fill empty GPS cols + forward-only status
+grant select on public.driver_schedule, public.driver_weekly_schedule, public.driver_daily_vehicle to service_role;  -- planned truck lookup
+grant execute on function public.driver_vehicle_for_date(date) to service_role;
+grant select, insert, update on public.vehicle_live_location, public.geocode_cache, public.vzc_token to service_role;
+grant select, insert, delete on public.vzc_sync_runs to service_role;         -- run log + 14-day prune
 
 -- ============================================================================================================
--- GO-LIVE (do NOT run until Jonathan has reviewed the plan and entered the secrets):
+-- GO-LIVE (do NOT run until Jonathan has reviewed the plan):
 --   1) Edge Functions → Secrets: VZC_USERNAME, VZC_PASSWORD, VZC_APP_ID            (Jonathan, in the dashboard)
---   2) Vault secret with the service_role key (Jonathan, in the SQL editor — never in chat):
---        select vault.create_secret('<paste the service_role key here>', 'vzc_sync_service_key', 'vzc-sync cron invoke key');
---   3) Optional test (writes nothing):  select public.vzc_sync_invoke(true);
+--      (no service key to copy any more — the invoke token above is created automatically)
+--   2) Optional test (writes nothing):  select public.vzc_sync_invoke(true);
 --        then: select status_code, content::json->'summary' from net._http_response order by id desc limit 1;
---   4) TURN ON (every 3 minutes, 24/7):
+--   3) TURN ON (every 3 minutes, 24/7):
 --        select cron.schedule('vzc-sync', '*/3 * * * *', $c$select public.vzc_sync_invoke()$c$);
 --   Turn off:  select cron.unschedule('vzc-sync');
 -- ============================================================================================================
