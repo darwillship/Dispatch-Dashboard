@@ -1,3 +1,22 @@
+SHIFT Dispatch v3.8.0 — Multi-stop routes
+
+v3.8.0 (2026-10-07):
+- A task can be a ROUTE: its Pickup is the start, then any number of stops (table dispatch_task_stops, see SUPABASE-ROUTES.sql).
+  Tasks without stops work exactly as before.
+- Task create/edit: "+ Add stop" → stop list (saved/built-in or typed location, type pickup/delivery/both, material,
+  pallets, notes). Reorder with drag ⋮⋮ or ↑/↓; ✕ removes a stop. The first "+ Add stop" keeps the Delivery as stop 1.
+- "⛓ Combine into route" (toolbar): tap 2+ tasks in route order → Combine… → pick date/driver (truck follows Driver
+  Schedule) → Create route. Stops are copied from each task's pickup + delivery; back-to-back visits to the same place
+  merge; pickups at the start location load up front (checkbox). Originals are hidden (not deleted) — "Show combined"
+  shows them with "↩ Restore".
+- Route cards list the stops with GPS leg timings, e.g. "Federal Envelope 2:49–3:00 PM (51 min drive, 11 min on site)",
+  and a status chip per stop (tap: pending → arrived → done). When every stop is done the route completes automatically
+  (database trigger; completed_at = final stop's GPS arrival when known).
+- Route History → Export tasks CSV: one row per stop for routes (normal tasks keep one row; stop columns are blank).
+- GPS bot: per-stop times go to dispatch_task_stops (gps_arrived_at, gps_departed_at, gps_vehicle_id, gps_source,
+  gps_updated_at, status); leg/dwell minutes come from view dispatch_route_stops_v. Route start departure stays on
+  dispatch_tasks.gps_departed_at.
+
 SHIFT Dispatch v3.7.0 — Verizon Connect Reveal GPS stop times
 
 v3.7.0 (2026-10-07):
@@ -52,4 +71,4 @@ New in v3.4.0 (full details: DRIVER-APP.md):
 - Suggest order (from History, only applied after you accept).
 - Location search, Task Type no longer defaults to shuttle, one driver status field.
 
-Files: index.html, shift-features.js, timesheet-features.js, truck-features.js, gps-features.js, driver.html, sw.js, driver-manifest.webmanifest, icons/.
+Files: index.html, shift-features.js, timesheet-features.js, truck-features.js, gps-features.js, routes-features.js, driver.html, sw.js, driver-manifest.webmanifest, icons/.

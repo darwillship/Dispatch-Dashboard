@@ -59,6 +59,8 @@ window.SHIFT_gpsLine=function(t,cls){
   let p=parts(t).map(esc);if(t.gps_vehicle_id!=null)p.push(`<span class="gps-veh">${esc(vehName(t.gps_vehicle_id))}</span>`);
   return `<div class="${cls||"route-gps"}" title="${esc(tip(t))}">📍 ${p.join(" · ")}</div>`;
 };
+/* shared helpers (v3.8.0: used by routes-features.js) */
+window.SHIFT_ctStamp=ctStamp;window.SHIFT_ctClock=v=>v?timeF.format(new Date(v)):"";window.SHIFT_ctYmd=ctYmd;
 /* CSV columns (also used by the Time Sheets activities export) */
 window.SHIFT_gpsCsvFields=function(t){
   t=t||{};
@@ -70,7 +72,7 @@ window.SHIFT_gpsCsvFields=function(t){
 /* task cards */
 const origCard=window.taskCard;
 window.taskCard=function(t){
-  let html=origCard.apply(this,arguments),g=SHIFT_gpsLine(t);
+  let html=origCard.apply(this,arguments),g=t&&t.is_route?"":SHIFT_gpsLine(t);  /* routes show per-stop timings (routes-features.js) */
   if(!g)return html;
   let i=html.indexOf('<div class="route-flags">');
   return i<0?html.replace(/<\/article>\s*$/,g+"</article>"):html.slice(0,i)+g+html.slice(i);
@@ -108,6 +110,9 @@ window.openHistory=function(){
 };
 function csvDownload(name,rows){
   if(!rows.length)return alert("No tasks in this date range.");
+  return SHIFT_csvDownload(name,rows);
+}
+window.SHIFT_csvDownload=function(name,rows){
   let h=Object.keys(rows[0]),q=v=>`"${String(v??"").replaceAll('"','""')}"`;
   let blob=new Blob(["\ufeff"+[h.map(q).join(","),...rows.map(r=>h.map(k=>q(r[k])).join(","))].join("\r\n")],{type:"text/csv"});
   let a=document.createElement("a"),u=URL.createObjectURL(blob);a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);
