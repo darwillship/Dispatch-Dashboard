@@ -2,12 +2,16 @@
 // Credentials come ONLY from Edge Function secrets (VZC_USERNAME / VZC_PASSWORD / VZC_APP_ID). Nothing secret is logged.
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import * as M from "./match.ts";
+import * as U from "./unplanned.ts";
 import { geocodeAddress } from "./geocode.ts";
 
 const API = "https://fim.api.us.fleetmatics.com";
 const TOKEN_TTL_MS = 15 * 60_000;      // Reveal tokens last ~20 min; refresh at 15
 const TRACK_REFRESH_MS = 15 * 60_000;  // refetch a parked truck's history at most every 15 min
 const MAX_GEOCODES_PER_RUN = 15;
+const UNPLANNED_REFRESH_MS = 9 * 60_000;  // trucks not on an open task: re-read their track at most every 9 min while moving
+const UNPLANNED_SETTLE_MS = 7 * 60_000;   // ...and once more 7 min after their last report (so a fresh engine-off stop can reach 5 min)
+const UP_COLS = ["driver_id", "task_id", "after_stop_id", "engine_off_at", "engine_on_at", "departed_at", "idle_minutes", "engine_off_minutes", "location_name", "address", "lat", "lon", "saved_location_id"];
 const WRITE_MAX_AGE_DAYS = 1;          // writes only for today + yesterday (CT); older dates are dry-run only
 const LIVE_STATE: Record<string, string> = { Moving: "Moving", Idle: "Idle", Stop: "Engine off" };
 const TASK_COLS = "id,title,status,task_type,work_date,scheduled_at,completed_at,assigned_driver_id,pickup_name,pickup_address,delivery_name,delivery_address,is_route,combined_into_task_id,gps_departed_at,gps_arrived_at,gps_left_destination_at,gps_vehicle_id,gps_source,gps_origin_engine_on_at,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_returned_base_at,gps_match_method,gps_match_distance_m";
@@ -155,7 +159,40 @@ export async function runSync(env: Env, opt: SyncOptions) {
   }
   const base = M.makePlace("Darwill McCook", M.BASE_ADDRESS, null)!;
 
-  // 5) per date
+  // 5) unplanned stops (v3.10.0): today's date (or explicitly requested dates). Saved only once the table exists.
+  const upDates = new Set(dates.filter((d) => d === today || !!opt.dates?.length));
+  let upTable = false;
+  if (upDates.size) {
+    const { error } = await db.from("unplanned_stops").select("id").limit(1);
+    upTable = !error;
+    if (error) summary.unplanned_note = "unplanned_stops table not created yet — detection only, nothing saved";
+  }
+  let named: U.NamedPlace[] | null = null;
+  async function namedPlaces(): Promise<U.NamedPlace[]> {
+    if (named) return named;
+    named = [];
+    const seen = new Set<string>();
+    const add = async (name: string | null, address: string | null, savedId: number | null) => {
+      if (!name || !address) return;
+      const k = name.toLowerCase() + "|" + M.cacheKey(address);
+      if (seen.has(k)) return;
+      seen.add(k);
+      const p = await placeFor(name, address);
+      if (p && p.lat != null) named!.push({ name, address, place: p, savedId });
+    };
+    const { data: sl, error: se } = await db.from("saved_locations").select("id,name,address").order("id");
+    if (se) warnings.push("read saved_locations: " + se.message);
+    for (const r of (sl || []) as any[]) await add(r.name, r.address, r.id);
+    for (const [n, a] of U.BUILTIN_LOCATIONS) await add(n, a, null);
+    // names already used on tasks/stops (e.g. "Darwill Hillside")
+    const { data: tn } = await db.from("dispatch_tasks").select("pickup_name,pickup_address,delivery_name,delivery_address").order("id", { ascending: false }).limit(500);
+    for (const r of (tn || []) as any[]) { await add(r.pickup_name, r.pickup_address, null); await add(r.delivery_name, r.delivery_address, null); }
+    const { data: sn } = await db.from("dispatch_task_stops").select("location_name,location_address").order("id", { ascending: false }).limit(500);
+    for (const r of (sn || []) as any[]) await add(r.location_name, r.location_address, null);
+    return named;
+  }
+
+  // 6) per date
   const trackCache = new Map<string, M.VehicleTrack>();
   for (const date of dates) {
     const dsum: any = { date, writes_allowed: !opt.dryRun && date >= writableFrom, open_tasks: 0, matched: [], unmatched: [], skipped: [], writes: 0, write_errors: [] };
@@ -205,7 +242,8 @@ export async function runSync(env: Env, opt: SyncOptions) {
       });
     }
     dsum.open_tasks = targets.length;
-    if (!targets.length) continue;
+    const up = upDates.has(date);
+    if (!targets.length && !up) continue;
 
     // trucks worth fetching: planned trucks of open tasks (or every truck if a task has none / other trucks allowed)
     const needAll = env.allowOtherTruck || targets.some((t) => !t.plannedVehicleId && !t.existing.gps_vehicle_id);
@@ -213,15 +251,24 @@ export async function runSync(env: Env, opt: SyncOptions) {
     const fetchFrom = winStart - 6 * 3600e3;
     const tracks: M.VehicleTrack[] = [];
     for (const v of vehicles) {
-      if (!needAll && !wanted.has(v.id)) continue;
+      const forTasks = targets.length > 0 && (needAll || wanted.has(v.id));
+      if (!forTasks && !up) continue;
       const l = loc.get(v.id);
       if (!l?.update || l.update < fetchFrom) continue; // no GPS reports in this window
+      if (!forTasks && l.update < winStart) continue;   // unplanned check only: no GPS at all this day
       const key = `${v.id}|${date}`;
       if (!trackCache.has(key)) {
         const meta: any = liveMeta.get(v.id);
-        const unchanged = meta?.last_track_update_utc && l.update <= Date.parse(meta.last_track_update_utc) &&
-          meta.last_track_fetch_at && Date.now() - Date.parse(meta.last_track_fetch_at) < TRACK_REFRESH_MS && !opt.dates?.length && opt.source === "pg_cron";
-        if (unchanged) { dsum.skipped.push({ vehicle: v.name, why: "no new GPS since last run" }); continue; }
+        const cron = !opt.dates?.length && opt.source === "pg_cron";
+        const lastFetch = meta?.last_track_fetch_at ? Date.parse(meta.last_track_fetch_at) : null;
+        const noNew = !!meta?.last_track_update_utc && l.update <= Date.parse(meta.last_track_update_utc);
+        const unchanged = noNew && lastFetch != null && Date.now() - lastFetch < TRACK_REFRESH_MS && cron;
+        if (forTasks && unchanged) { dsum.skipped.push({ vehicle: v.name, why: "no new GPS since last run" }); continue; }
+        if (!forTasks && cron && lastFetch != null) {
+          const why = noNew ? (lastFetch >= l.update + UNPLANNED_SETTLE_MS ? "parked, already checked for unplanned stops" : null)
+            : (Date.now() - lastFetch < UNPLANNED_REFRESH_MS ? "unplanned-stop check runs every 9 min for trucks without open tasks" : null);
+          if (why) { dsum.skipped.push({ vehicle: v.name, why }); continue; }
+        }
         const hist = await vzc.get(`/rad/v1/vehicles/${encNum(v.vzc_vehicle_number)}/status/history?startdatetimeutc=${fmtUtc(fetchFrom)}&enddatetimeutc=${fmtUtc(winEnd)}`);
         // segments (ignition on/off) return 24 h from the start time: one call for today, two for yesterday (morning only).
         // The 6 h look-back before midnight is covered by the history plots above.
@@ -242,7 +289,7 @@ export async function runSync(env: Env, opt: SyncOptions) {
     }
     if (!tracks.length) { dsum.note = "no truck GPS in this window"; continue; }
 
-    const res = M.matchDay({ date, tasks: targets, vehicles: tracks, base, winStart, winEnd, allowOtherTruck: env.allowOtherTruck });
+    const res = targets.length ? M.matchDay({ date, tasks: targets, vehicles: tracks, base, winStart, winEnd, allowOtherTruck: env.allowOtherTruck }) : { matches: [], unmatched: [] };
     dsum.unmatched = res.unmatched;
     for (const m of res.matches) {
       const task = targets.find((t) => t.id === m.taskId)!;
@@ -262,6 +309,107 @@ export async function runSync(env: Env, opt: SyncOptions) {
         if (p.status && p.table === "dispatch_task_stops") {   // forward-only stop status (v3.8.0 rules)
           const { error } = await db.from("dispatch_task_stops").update({ status: p.status.to }).eq("id", p.id).in("status", p.status.from);
           if (error) dsum.write_errors.push(`stop #${p.id} status: ${error.message}`);
+        }
+      }
+    }
+    if (up) {
+      try { await unplannedForDate(date, dsum, tracks, res.matches, (trows || []) as any[], (srows || []) as any[], (plan || []) as any[], winStart, winEnd); }
+      catch (e) { dsum.unplanned_error = String((e as Error)?.message || e).slice(0, 300); warnings.push("unplanned stops: " + dsum.unplanned_error); }
+    }
+  }
+
+  async function unplannedForDate(date: string, dsum: any, tracks: M.VehicleTrack[], matches: M.TaskMatch[], trows: any[], srows: any[], plan: any[], winStart: number, winEnd: number) {
+    const dayStart = winStart, dayEnd = M.ctMidnightUtc(addDays(date, 1));
+    const ms = (v: any) => (v == null ? null : Date.parse(v));
+    const live = trows.filter((t) => !/cancel/i.test(t.status || ""));
+    const byTaskMatch = new Map(matches.map((m) => [m.taskId, m]));
+    const vehOf = (t: any): number | null => byTaskMatch.get(t.id)?.vehicleId ?? (t.gps_vehicle_id != null ? Number(t.gps_vehicle_id) : null);
+    const plannedTruck = new Map<number, number | null>(plan.map((p: any) => [p.driver_id, p.vehicle_id]));
+    const working = (p: any) => !["off", "pto", "call_off"].includes(String(p.schedule_status || "").toLowerCase());
+    const placesOf = new Map<number, M.Place[]>();
+    for (const t of live) {
+      const ps: (M.Place | null)[] = [await placeFor(t.pickup_name || "origin", t.pickup_address)];
+      if (!t.is_route) ps.push(await placeFor(t.delivery_name || "destination", t.delivery_address));
+      for (const s of srows.filter((s) => s.task_id === t.id)) ps.push(await placeFor(s.location_name || "stop", s.location_address));
+      placesOf.set(t.id, ps.filter(Boolean) as M.Place[]);
+    }
+    let existing: any[] = [];
+    if (upTable) {
+      const { data, error } = await db.from("unplanned_stops").select("*").eq("work_date", date);
+      if (error) throw new Error("read unplanned_stops: " + error.message);
+      existing = data || [];
+    }
+    dsum.unplanned = []; dsum.unplanned_idle = []; dsum.unplanned_checked = []; dsum.unplanned_writes = 0;
+    const canWrite = dsum.writes_allowed && upTable;
+    for (const tr of tracks) {
+      const v = tr.vehicleId;
+      const schedDrivers = plan.filter((p: any) => p.vehicle_id === v && working(p)).map((p: any) => Number(p.driver_id));
+      const related = live.filter((t) => vehOf(t) === v || !t.assigned_driver_id ||
+        (t.assigned_driver_id && (plannedTruck.get(t.assigned_driver_id) === v || schedDrivers.includes(Number(t.assigned_driver_id)))));
+      const planned = related.flatMap((t) => placesOf.get(t.id) || []);
+      // what this truck was working on (stored GPS times + this run's matches); combined originals are hidden, so never attach to them
+      const spans: U.TaskSpan[] = [];
+      for (const t of live.filter((t) => vehOf(t) === v && !t.combined_into_task_id)) {
+        const m = byTaskMatch.get(t.id);
+        const dep = ms(t.gps_departed_at) ?? m?.origin?.departed ?? null;
+        const ret = ms(t.gps_returned_base_at) ?? m?.returnedBase ?? null;
+        const anchors: (number | null)[] = [dep];
+        const stops: U.TaskSpan["stops"] = [];
+        if (t.is_route) {
+          for (const s of srows.filter((s) => s.task_id === t.id)) {
+            const sv = m?.stops.find((x) => x.stopId === s.id)?.visit;
+            const a = ms(s.gps_arrived_at) ?? sv?.arrived ?? null, d = ms(s.gps_departed_at) ?? sv?.departed ?? null;
+            anchors.push(a, d);
+            stops.push({ id: s.id, seq: s.seq, t: a });
+          }
+        } else {
+          anchors.push(ms(t.gps_arrived_at) ?? m?.dest?.arrived ?? null, ms(t.gps_left_destination_at) ?? m?.dest?.departed ?? null);
+        }
+        const an = anchors.filter((x): x is number => x != null);
+        if (!an.length) continue;
+        spans.push({ taskId: t.id, kind: t.is_route ? "route" : "single", driverId: t.assigned_driver_id ?? null, start: dep ?? Math.min(...an), end: ret ?? ms(t.completed_at), anchors: an, stops });
+      }
+      const baseArr = M.computeVisits(tr.tl, base, v).filter((x) => !x.clipped).map((x) => x.arrived);
+      const home = U.homePlace(tr.tl, dayStart);
+      const judged = U.detectStops({ tl: tr.tl, now: winEnd, dayStart, dayEnd, base, home, planned });
+      const counts: Record<string, number> = {};
+      for (const c of judged) counts[c.verdict] = (counts[c.verdict] || 0) + 1;
+      dsum.unplanned_checked.push({ truck: tr.name, home: home?.address || null, stops: counts });
+      for (const c of judged.filter((c) => c.verdict === "idle")) dsum.unplanned_idle.push({ truck: tr.name, address: c.addr, arrived: M.ctClock(c.arrived), left: M.ctClock(c.departed), still_min: c.stillMinutes });
+      const truckDrivers = [...new Set(live.filter((t) => vehOf(t) === v && t.assigned_driver_id).map((t) => Number(t.assigned_driver_id)))];
+      for (const c of judged.filter((c) => c.verdict === "unplanned")) {
+        const at = U.attachStop(c.arrived, spans, baseArr);
+        const task = at.taskId != null ? live.find((t) => t.id === at.taskId) : null;
+        const driverId = task?.assigned_driver_id ?? (truckDrivers.length === 1 ? truckDrivers[0] : schedDrivers.length === 1 ? schedDrivers[0] : null);
+        if (driverId != null && env.excludeDrivers.includes(Number(driverId))) continue;
+        const nm = U.nameFor(c, await namedPlaces());
+        const done = c.departed != null;
+        const row: Record<string, any> = {
+          work_date: date, vehicle_id: v, driver_id: driverId, task_id: at.taskId, after_stop_id: at.afterStopId,
+          arrived_at: new Date(c.arrived).toISOString(), engine_off_at: c.engineOff != null ? new Date(c.engineOff).toISOString() : null,
+          engine_on_at: done && c.engineOn != null ? new Date(c.engineOn).toISOString() : null, departed_at: done ? new Date(c.departed!).toISOString() : null,
+          idle_minutes: done ? c.idleMinutes : null, engine_off_minutes: done ? c.offMinutes : null,
+          location_name: nm?.name ?? null, address: (c.addr ?? nm?.address ?? "").replace(/, USA$/, "") || null, lat: c.lat, lon: c.lon, saved_location_id: nm?.savedId ?? null, source: "vzc_auto",
+        };
+        const ex = existing.find((e) => Number(e.vehicle_id) === v && Math.abs(Date.parse(e.arrived_at) - c.arrived) <= U.UNPLANNED_MATCH_MS);
+        const set: Record<string, any> = {};
+        if (ex) for (const k of UP_COLS) if (row[k] != null && ex[k] == null) set[k] = row[k];
+        const action = ex ? (Object.keys(set).length ? "update" : "unchanged") : "insert";
+        dsum.unplanned.push({
+          truck: tr.name, driver_id: driverId, attach: at.kind, task_id: at.taskId, after_stop_id: at.afterStopId,
+          name: row.location_name, address: row.address, arrived: M.ctClock(c.arrived), engine_off: M.ctClock(c.engineOff), engine_on: M.ctClock(done ? c.engineOn : null),
+          left: M.ctClock(c.departed), off_min: c.offMinutes, idle_min: c.idleMinutes, ongoing: !done, action: canWrite ? action : `${action} (not saved)`, id: ex?.id ?? null,
+        });
+        if (!canWrite || action === "unchanged") continue;
+        if (ex) {
+          let q = db.from("unplanned_stops").update({ ...set, updated_at: nowIso }, { count: "exact" }).eq("id", ex.id);
+          for (const k of Object.keys(set)) q = q.is(k, null);   // only-if-still-empty, enforced in the UPDATE itself
+          const { error, count } = await q;
+          if (error) dsum.write_errors.push(`unplanned #${ex.id}: ${error.message}`); else dsum.unplanned_writes += count || 0;
+        } else {
+          const { data, error } = await db.from("unplanned_stops").upsert(row, { onConflict: "vehicle_id,arrived_at", ignoreDuplicates: true }).select("id");
+          if (error) dsum.write_errors.push(`unplanned insert ${tr.name} ${M.ctClock(c.arrived)}: ${error.message}`);
+          else { dsum.unplanned_writes += (data || []).length; if (data?.[0]) existing.push({ ...row, id: data[0].id }); }
         }
       }
     }

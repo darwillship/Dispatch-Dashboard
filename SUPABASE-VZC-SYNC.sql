@@ -232,3 +232,49 @@ grant select, insert, delete on public.vzc_sync_runs to service_role;         --
 --        select cron.schedule('vzc-sync', '*/3 * * * *', $c$select public.vzc_sync_invoke()$c$);
 --   Turn off:  select cron.unschedule('vzc-sync');
 -- ============================================================================================================
+
+-- ============================================================================================================
+-- v3.10.0 — AUTOMATIC UNPLANNED STOPS (applied 2026-10-08 as migration "unplanned_stops"; additive only)
+-- The vzc-sync updater writes here; the dashboard can only read rows and set review_status/reviewed_at.
+-- ============================================================================================================
+-- v3.10.0 — automatic UNPLANNED STOPS (additive: one new table + grants; no existing table/row/trigger is changed)
+create table if not exists public.unplanned_stops (
+  id                 bigint generated always as identity primary key,
+  work_date          date        not null,
+  vehicle_id         bigint      not null references public.vehicles(id),
+  driver_id          bigint      references public.drivers(id) on delete set null,          -- null = truck-level (no driver could be inferred)
+  task_id            bigint      references public.dispatch_tasks(id) on delete set null,   -- route or single task it happened during (null = driver/truck card)
+  after_stop_id      bigint      references public.dispatch_task_stops(id) on delete set null, -- route stop it came after (null = right after the route start)
+  arrived_at         timestamptz not null,   -- first stopped point
+  engine_off_at      timestamptz,
+  engine_on_at       timestamptz,
+  departed_at        timestamptz,            -- first moving point ("left"); fills in later
+  idle_minutes       integer,
+  engine_off_minutes integer,
+  location_name      text,                   -- saved/known location within ~250 m, else null
+  address            text,                   -- Verizon address
+  lat                double precision,
+  lon                double precision,
+  saved_location_id  bigint      references public.saved_locations(id) on delete set null,
+  review_status      text        not null default 'pending' check (review_status in ('pending','kept','ignored')),
+  reviewed_at        timestamptz,
+  source             text        not null default 'vzc_auto',
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now(),
+  constraint unplanned_stops_vehicle_arrived_key unique (vehicle_id, arrived_at)   -- reruns never duplicate
+);
+comment on table public.unplanned_stops is 'v3.10.0: stops a truck made that are not on any task (written by vzc-sync, only-fill-empty). Never counted for route completion.';
+create index if not exists unplanned_stops_work_date_idx on public.unplanned_stops (work_date);
+create index if not exists unplanned_stops_task_idx on public.unplanned_stops (task_id) where task_id is not null;
+
+alter table public.unplanned_stops enable row level security;
+drop policy if exists "unplanned stops read" on public.unplanned_stops;
+create policy "unplanned stops read" on public.unplanned_stops for select to anon, authenticated using (true);
+drop policy if exists "unplanned stops review" on public.unplanned_stops;
+create policy "unplanned stops review" on public.unplanned_stops for update to anon, authenticated using (true) with check (true);
+
+revoke all on public.unplanned_stops from anon, authenticated;
+grant select on public.unplanned_stops to anon, authenticated;
+grant update (review_status, reviewed_at) on public.unplanned_stops to anon, authenticated;   -- dashboard can only Keep/Ignore
+grant select, insert, update on public.unplanned_stops to service_role;                     -- the updater
+grant select on public.saved_locations to service_role;                                      -- naming stops after saved customers

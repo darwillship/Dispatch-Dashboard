@@ -19,8 +19,9 @@ export interface Seg {
   start: number; end: number | null; complete: boolean;
   sLat: number | null; sLon: number | null; sAddr?: string | null;
   eLat: number | null; eLon: number | null; eAddr?: string | null;
+  sPriv?: boolean; ePriv?: boolean;
 }
-export interface Ev { t: number; lat: number | null; lon: number | null; speed: number; kind: "off" | "on" | "plot"; norm: string }
+export interface Ev { t: number; lat: number | null; lon: number | null; speed: number; kind: "off" | "on" | "plot"; norm: string; addr?: string | null; priv?: boolean }
 export interface Place { key: string; label: string; address: string; lat: number | null; lon: number | null; norm: string; radius: number; isBase?: boolean }
 export interface Visit {
   vehicleId: number; placeKey: string;
@@ -112,6 +113,7 @@ export function parseSegments(body: any): Seg[] {
         start, end: utc(s.EndDateUtc), complete: !!s.IsComplete,
         sLat: s.StartLocation?.Latitude ?? null, sLon: s.StartLocation?.Longitude ?? null, sAddr: s.StartLocationIsPrivate ? null : locAddr(s.StartLocation),
         eLat: s.EndLocation?.Latitude ?? null, eLon: s.EndLocation?.Longitude ?? null, eAddr: s.EndLocationIsPrivate ? null : locAddr(s.EndLocation),
+        sPriv: !!s.StartLocationIsPrivate, ePriv: !!s.EndLocationIsPrivate,
       });
     }
   }
@@ -122,23 +124,23 @@ export function parseSegments(body: any): Seg[] {
 /** Merge GPS plots and ignition on/off events into one time-ordered list, clipped to [from, to]. */
 export function buildTimeline(plots: Plot[], segs: Seg[], from = -Infinity, to = Infinity): Ev[] {
   const ev: Ev[] = [];
-  for (const p of plots) ev.push({ t: p.t, lat: p.lat, lon: p.lon, speed: p.speed, kind: "plot", norm: normalizeAddress(p.addr) });
+  for (const p of plots) ev.push({ t: p.t, lat: p.lat, lon: p.lon, speed: p.speed, kind: "plot", norm: normalizeAddress(p.addr), addr: p.addr ?? null });
   for (const s of segs) {
-    ev.push({ t: s.start, lat: s.sLat, lon: s.sLon, speed: 0, kind: "on", norm: normalizeAddress(s.sAddr) });
-    if (s.end != null && s.complete) ev.push({ t: s.end, lat: s.eLat, lon: s.eLon, speed: 0, kind: "off", norm: normalizeAddress(s.eAddr) });
+    ev.push({ t: s.start, lat: s.sLat, lon: s.sLon, speed: 0, kind: "on", norm: normalizeAddress(s.sAddr), addr: s.sAddr ?? null, priv: !!s.sPriv });
+    if (s.end != null && s.complete) ev.push({ t: s.end, lat: s.eLat, lon: s.eLon, speed: 0, kind: "off", norm: normalizeAddress(s.eAddr), addr: s.eAddr ?? null, priv: !!s.ePriv });
   }
   const rank = { off: 0, on: 1, plot: 2 } as const;
   return ev.filter((e) => e.t >= from && e.t <= to).sort((a, b) => a.t - b.t || rank[a.kind] - rank[b.kind]);
 }
 
 // ---------- visits ----------
-function insideTest(e: Ev, p: Place): { ok: boolean; d: number | null; m: "geofence" | "address" | null } {
+export function insideTest(e: Ev, p: Place): { ok: boolean; d: number | null; m: "geofence" | "address" | null } {
   const d = p.lat != null && p.lon != null && e.lat != null && e.lon != null ? haversineM(e.lat, e.lon, p.lat, p.lon) : null;
   if (d != null && d <= p.radius) return { ok: true, d, m: "geofence" };
   if (p.norm && e.norm && addrMatch(p.norm, e.norm)) return { ok: true, d, m: "address" };
   return { ok: false, d, m: null };
 }
-const still = (e: Ev) => e.kind !== "plot" || e.speed <= STILL_KMH;
+export const still = (e: Ev) => e.kind !== "plot" || e.speed <= STILL_KMH;
 
 /** All stops of one truck at one place (drive-bys excluded). */
 export function computeVisits(tl: Ev[], place: Place, vehicleId: number): Visit[] {
