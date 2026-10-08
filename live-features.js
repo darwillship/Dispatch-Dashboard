@@ -32,6 +32,12 @@ const st=document.createElement("style");st.textContent=css;document.head.append
 let LIVE=new Map(),loaded=false,lastErr=null;
 window.SHIFT_live=LIVE;
 const clock=v=>typeof SHIFT_ctClock==="function"?SHIFT_ctClock(v):(v?new Date(v).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"");
+/* "11:45 AM" today (CT), "Wed 10/7, 11:45 AM" for any other day */
+const ctDay=t=>new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(t));
+const when=(v,now)=>{if(v==null)return "";if(ctDay(v)===ctDay(now||Date.now()))return clock(v);
+  const p=Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",weekday:"short",month:"numeric",day:"numeric"}).formatToParts(new Date(v)).map(x=>[x.type,x.value]));
+  return `${p.weekday} ${p.month}/${p.day}, ${clock(v)}`};
+window.SHIFT_liveWhen=when;
 const stamp=v=>typeof SHIFT_ctStamp==="function"?SHIFT_ctStamp(v):(v||"");
 async function fetchLive(){
   try{
@@ -58,10 +64,10 @@ function liveInfo(vid,now){
   let text;
   if(x.state==="Moving")text=`🟢 Moving${x.speed_mph!=null?" "+Math.round(x.speed_mph)+" mph":""}`;
   else if(x.state==="Idle")text="🟡 Idle";
-  else if(x.state==="Engine off")text="⚫ Engine off"+(rep?" since "+clock(rep):"");
+  else if(x.state==="Engine off")text="⚫ Engine off"+(rep?" since "+when(rep,now):"");
   else text="❔ No signal";
   let cls=x.state==="Moving"?"moving":x.state==="Idle"?"idle":"off";
-  if(stale){cls="stale";text="⚠ "+(upd&&now-upd>STALE_MS?"GPS feed paused":`${x.state} · last GPS ${rep?clock(rep):"?"}`);tip.unshift(upd&&now-upd>STALE_MS?"The updater has not run for 10+ minutes — data may be old.":"This truck has not reported for 10+ minutes.")}
+  if(stale){cls="stale";text="⚠ "+(upd&&now-upd>STALE_MS?"GPS feed paused":`${x.state} · last GPS ${rep?when(rep,now):"?"}`);tip.unshift(upd&&now-upd>STALE_MS?"The updater has not run for 10+ minutes — data may be old.":"This truck has not reported for 10+ minutes.")}
   return {cls,text,tip:tip.join("\n"),address:x.address||""};
 }
 window.SHIFT_liveInfo=liveInfo;

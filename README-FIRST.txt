@@ -1,3 +1,6 @@
+SHIFT Dispatch v3.9.1 (2026-10-08): live truck chip shows the date when the last Verizon report is not from today (CT),
+e.g. "⚫ Engine off since Wed 10/7, 11:45 AM" (same for "⚠ Moving · last GPS …"). Stale-flag logic unchanged.
+
 SHIFT Dispatch v3.9.0 — Live truck status + automatic Verizon Connect GPS updater (built, NOT scheduled yet)
 
 v3.9.0 (2026-10-08):
