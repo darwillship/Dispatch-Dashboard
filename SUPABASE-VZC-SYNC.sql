@@ -347,3 +347,88 @@ grant select, insert, update on public.vehicle_assignment_suggestions to service
 grant select on public.driver_shifts, public.driver_pretrips to service_role;
 grant insert (work_date, driver_id, status, start_time, end_time, note, vehicle_id, vehicle_source, auto_assigned_at) on public.driver_schedule to service_role;
 grant update (vehicle_id, vehicle_source, auto_assigned_at) on public.driver_schedule to service_role;
+
+
+-- ========== v3.12.0 auto GPS status (applied via apply_migration v312_auto_status) ==========
+-- v3.12.0: auto GPS status + source so a later manual change wins.
+-- status_source: null = never auto'd (updater may act); 'auto_gps' = updater wrote it (updater may advance);
+-- 'manual' = a person (dashboard Start/Complete or driver Start/Done/Undo) overrode auto — updater never touches again.
+alter table public.dispatch_tasks
+  add column if not exists status_source text,
+  add column if not exists status_auto_at timestamptz;
+do $fn$ begin
+  if not exists (select 1 from pg_constraint where conname = 'dispatch_tasks_status_source_chk') then
+    alter table public.dispatch_tasks
+      add constraint dispatch_tasks_status_source_chk
+      check (status_source is null or status_source in ('auto_gps','manual'));
+  end if;
+end $fn$;
+comment on column public.dispatch_tasks.status_source is 'null | auto_gps | manual — GPS updater only writes when null or auto_gps; a person setting status flips auto_gps → manual via trigger';
+comment on column public.dispatch_tasks.status_auto_at is 'when the GPS updater last auto-wrote status (dashboard can show an "auto" hint)';
+
+-- When status changes on an auto_gps row and the writer is not the updater (it always bumps status_auto_at), the row becomes manual.
+-- Dashboard / driver only send {status[, completed_at]}, so auto → manual and they win forever.
+create or replace function public.dispatch_tasks_status_manual()
+returns trigger language plpgsql set search_path to '' as $fn$
+begin
+  -- updater writes always bump status_auto_at; nested updates (route-complete stop trigger) stay automatic
+  if new.status is distinct from old.status
+     and new.status_auto_at is not distinct from old.status_auto_at
+     and old.status_source = 'auto_gps'
+     and pg_trigger_depth() < 2 then
+    new.status_source := 'manual';
+  end if;
+  return new;
+end $fn$;
+drop trigger if exists dispatch_tasks_status_manual on public.dispatch_tasks;
+create trigger dispatch_tasks_status_manual
+  before update of status on public.dispatch_tasks
+  for each row execute function public.dispatch_tasks_status_manual();
+
+-- Atomic auto-status write with every hard guard. Returns a short action string for the run log.
+-- Never moves status backwards. Never touches protected ids, past work_dates, manual overrides,
+-- or tasks the driver flagged Missed/Refused (any shift_reminders note, open or resolved).
+create or replace function public.vzc_auto_status(p_task_id bigint, p_to text, p_completed_at timestamptz default null)
+returns text language plpgsql security definer set search_path to '' as $fn$
+declare
+  r public.dispatch_tasks%rowtype;
+  today date := (timezone('America/Chicago', now()))::date;
+  protected bigint[] := array[52,58,61,78,98,107,117,140,161,162];
+  n int;
+begin
+  if p_to is distinct from 'in_progress' and p_to is distinct from 'completed' then
+    return 'ignored: bad target';
+  end if;
+  select * into r from public.dispatch_tasks where id = p_task_id for update;
+  if not found then return 'ignored: missing'; end if;
+  if r.id = any (protected) then return 'ignored: protected'; end if;
+  if r.combined_into_task_id is not null then return 'ignored: combined'; end if;
+  if r.work_date is null or r.work_date < today then return 'ignored: past work_date'; end if;
+  if r.status_source = 'manual' then return 'ignored: manual'; end if;
+  if exists (
+    select 1 from public.shift_reminders s
+     where s.note ~ ('\[SHIFT-DRIVER task:' || p_task_id::text || ' (missed|refused)\]')
+  ) then return 'ignored: missed/refused flag'; end if;
+  if p_to = 'in_progress' then
+    if r.status is distinct from 'assigned' then return 'ignored: from=' || coalesce(r.status,'null'); end if;
+    update public.dispatch_tasks
+       set status = 'in_progress', status_source = 'auto_gps', status_auto_at = clock_timestamp()
+     where id = p_task_id and status = 'assigned'
+       and (status_source is null or status_source = 'auto_gps');
+    get diagnostics n = row_count;
+    return case when n > 0 then 'updated → in_progress' else 'race: no row' end;
+  end if;
+  -- completed
+  if coalesce(r.status,'') not in ('assigned','in_progress') then return 'ignored: from=' || coalesce(r.status,'null'); end if;
+  update public.dispatch_tasks
+     set status = 'completed',
+         completed_at = coalesce(completed_at, p_completed_at, now()),
+         status_source = 'auto_gps',
+         status_auto_at = clock_timestamp()
+   where id = p_task_id and status in ('assigned','in_progress')
+     and (status_source is null or status_source = 'auto_gps');
+  get diagnostics n = row_count;
+  return case when n > 0 then 'updated → completed' else 'race: no row' end;
+end $fn$;
+revoke all on function public.vzc_auto_status(bigint, text, timestamptz) from public, anon, authenticated;
+grant execute on function public.vzc_auto_status(bigint, text, timestamptz) to service_role;

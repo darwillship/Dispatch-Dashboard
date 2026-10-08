@@ -210,13 +210,17 @@ export interface StopTarget { id: number; seq: number; place: Place; status: str
 export interface TaskTarget {
   id: number; kind: "single" | "route"; title: string; driverId: number | null; plannedVehicleId: number | null;
   origin: Place | null; dest: Place | null; stops: StopTarget[]; existing: Record<string, any>;
-  completedAt: number | null; scheduledAt: number | null;
+  completedAt: number | null; scheduledAt: number | null; createdAt: number | null;
 }
+/** A destination (or stop) visit already recorded in the DB — used so a filled task's visit can't be re-claimed by a later open task. */
+export interface ClaimedVisit { vehicleId: number; arrived: number; ownerTaskId: number; ownerStopId?: number | null }
 export interface VehicleTrack { vehicleId: number; name: string; tl: Ev[] }
 export interface DayInput {
   date: string; tasks: TaskTarget[]; vehicles: VehicleTrack[]; base: Place; winStart: number; winEnd: number;
   /** false (default): a driver with a planned truck is only matched to that truck. Drivers without one can match any truck. */
   allowOtherTruck?: boolean;
+  /** Visits already stored on tasks/stops for this date (including filled/skipped ones). Same vehicle + arrived within CLAIM_MS = same physical visit. */
+  claimed?: ClaimedVisit[];
 }
 export interface StopMatch { stopId: number; seq: number; visit: Visit | null; isFinalBase: boolean }
 export interface TaskMatch {
@@ -228,6 +232,22 @@ const sameSpot = (a: Place | null, b: Place | null) =>
   !!a && !!b && ((a.norm && a.norm === b.norm) || (a.lat != null && b.lat != null && haversineM(a.lat, a.lon!, b.lat, b.lon!) < 60));
 const toMs = (v: any): number | null => (v == null ? null : typeof v === "number" ? v : Date.parse(v));
 
+/** Grace before created_at: a trip that left ~10 min before the dispatcher typed it still counts as "fresh". */
+export const CREATED_GRACE_MS = 10 * 60_000;
+/** Same vehicle + arrival within this window = one physical visit (blocks double-claims across tasks). */
+export const CLAIM_MS = 3 * 60_000;
+
+/** Earliest epoch a trip may start for this task: min(created_at − grace, scheduled_at if set and earlier). Null = no gate. */
+export function earliestTripStart(task: TaskTarget): number | null {
+  let e: number | null = task.createdAt != null ? task.createdAt - CREATED_GRACE_MS : null;
+  if (task.scheduledAt != null && (e == null || task.scheduledAt < e)) e = task.scheduledAt;
+  return e;
+}
+/** Origin departure when known, else destination/stop arrival. */
+export function tripStartMs(originDeparted: number | null | undefined, arrived: number): number {
+  return originDeparted != null ? originDeparted : arrived;
+}
+
 export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { taskId: number; reason: string }[] } {
   const cache = new Map<string, Visit[]>();
   const visits = (v: VehicleTrack, p: Place) => {
@@ -238,6 +258,28 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
   const inWin = (x: Visit) => !x.clipped && x.arrived >= input.winStart && x.arrived <= input.winEnd;
   const used = new Set<string>();
   const useKey = (vid: number, x: Visit) => `${vid}|${x.placeKey}|${x.arrived}`;
+  /** True when another task/stop already owns this physical visit (DB claim or this-run claim). */
+  const runClaims: ClaimedVisit[] = [];   // claims made earlier in this run (routes first, then singles best-first)
+  const claimedByOther = (vid: number, arrived: number, selfTaskId: number) =>
+    [...(input.claimed || []), ...runClaims].some((c) => c.ownerTaskId !== selfTaskId && c.vehicleId === vid && Math.abs(c.arrived - arrived) <= CLAIM_MS);
+  /**
+   * Time gate (v3.12.0): prefer trips that start at/after earliestTripStart.
+   * After-the-fact entry (whole visit ended before created_at − grace): allow only when unclaimed, with a score penalty.
+   * Manual anchors (existing gps_* within ANCHOR_MS) skip the gate so a typed time still wins.
+   */
+  const timeOk = (task: TaskTarget, ov: Visit | null, dv: Visit, hasManualAnchor: boolean): { ok: boolean; afterFact: boolean } => {
+    if (hasManualAnchor) return { ok: true, afterFact: false };
+    const earliest = earliestTripStart(task);
+    if (earliest == null) return { ok: true, afterFact: false };
+    const start = tripStartMs(ov?.departed, dv.arrived);
+    if (start >= earliest) return { ok: true, afterFact: false };
+    // after-the-fact: visit finished before the task existed
+    const visitEnd = dv.departed ?? dv.arrived;
+    const createdFloor = task.createdAt != null ? task.createdAt - CREATED_GRACE_MS : earliest;
+    const schedFits = task.scheduledAt == null || task.scheduledAt <= visitEnd + 60 * 60_000;   // a future-scheduled task is not "after the fact"
+    if (visitEnd < createdFloor && schedFits && !claimedByOther(dv.vehicleId, dv.arrived, task.id)) return { ok: true, afterFact: true };
+    return { ok: false, afterFact: false };
+  };
   const firstBaseAfter = (v: VehicleTrack, t: number | null) =>
     t == null ? null : visits(v, input.base).find((b) => !b.clipped && b.arrived > t)?.arrived ?? null;
   const timeBonus = (task: TaskTarget, t: number) => {
@@ -256,7 +298,7 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
   for (const task of input.tasks.filter((t) => t.kind === "route")) {
     let best: TaskMatch | null = null;
     for (const v of vehiclesFor(task)) {
-      const sv = task.stops.map((s) => visits(v, s.place).filter((x) => inWin(x) && !used.has(useKey(v.vehicleId, x))));
+      const sv = task.stops.map((s) => visits(v, s.place).filter((x) => inWin(x) && !used.has(useKey(v.vehicleId, x)) && !claimedByOther(v.vehicleId, x.arrived, task.id)));
       for (let k = 0; k < Math.min(3, task.stops.length); k++) {
         for (const v1 of sv[k]) {
           const anchor = toMs(task.stops[k].existing.gps_arrived_at);
@@ -270,9 +312,11 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
             if (nx) { chain[j] = nx; cursor = nx.departed; }
           }
           const ov = task.origin ? [...visits(v, task.origin)].reverse().find((o) => o.departed != null && o.departed <= v1.arrived && o.departed >= input.winStart - 12 * 3600e3) ?? null : null;
+          const gate = timeOk(task, ov, v1, anchor != null);
+          if (!gate.ok) continue;
           const n = chain.filter(Boolean).length;
           const planned = v.vehicleId === task.plannedVehicleId;
-          const score = n * 3 + (planned ? 4 : 0) + (ov ? 2 : 0) + timeBonus(task, v1.arrived) - v1.arrived / 1e14;
+          const score = n * 3 + (planned ? 4 : 0) + (ov ? 2 : 0) + timeBonus(task, v1.arrived) - (gate.afterFact ? 5 : 0) - v1.arrived / 1e14;
           if (!best || score > best.score) {
             const last = task.stops[task.stops.length - 1];
             const lastV = chain[chain.length - 1];
@@ -290,7 +334,10 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
         }
       }
     }
-    if (best) { matches.push(best); best.stops.forEach((s) => s.visit && used.add(useKey(best!.vehicleId, s.visit))); }
+    if (best) {
+      matches.push(best);
+      best.stops.forEach((s) => { if (s.visit) { used.add(useKey(best!.vehicleId, s.visit)); runClaims.push({ vehicleId: best!.vehicleId, arrived: s.visit.arrived, ownerTaskId: task.id, ownerStopId: s.stopId }); } });
+    }
     else unmatched.push({ taskId: task.id, reason: "no truck stopped at any stop of this route" });
   }
 
@@ -305,13 +352,16 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
       const dvs = visits(v, task.dest).filter(inWin);
       const ovs = task.origin && !sameSpot(task.origin, task.dest) ? visits(v, task.origin).filter((o) => o.departed != null) : [];
       for (const dv of dvs) {
+        if (used.has(useKey(v.vehicleId, dv)) || claimedByOther(v.vehicleId, dv.arrived, task.id)) continue;
         if (exArr != null && Math.abs(dv.arrived - exArr) > ANCHOR_MS) continue;
         let ov = [...ovs].reverse().find((o) => o.departed! <= dv.arrived && o.departed! >= input.winStart - 12 * 3600e3) ?? null;
         // this destination stop must be the first one after leaving the origin
         if (ov && dvs.some((d2) => d2 !== dv && d2.arrived >= ov!.departed! && d2.arrived < dv.arrived)) ov = null;
         if (exDep != null && (!ov || Math.abs(ov.departed! - exDep) > ANCHOR_MS) && exArr == null) continue;
+        const gate = timeOk(task, ov, dv, exArr != null || exDep != null);
+        if (!gate.ok) continue;
         const planned = v.vehicleId === task.plannedVehicleId;
-        const score = (planned ? 4 : 0) + (ov ? 3 : 0) + timeBonus(task, dv.arrived) - dv.arrived / 1e14;
+        const score = (planned ? 4 : 0) + (ov ? 3 : 0) + timeBonus(task, dv.arrived) - (gate.afterFact ? 5 : 0) - dv.arrived / 1e14;
         cands.push({ task, v, dv, ov, score, planned });
       }
     }
@@ -319,9 +369,10 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
   cands.sort((a, b) => b.score - a.score);
   const done = new Set<number>();
   for (const c of cands) {
-    if (done.has(c.task.id) || used.has(useKey(c.v.vehicleId, c.dv))) continue;
+    if (done.has(c.task.id) || used.has(useKey(c.v.vehicleId, c.dv)) || claimedByOther(c.v.vehicleId, c.dv.arrived, c.task.id)) continue;
     done.add(c.task.id);
     used.add(useKey(c.v.vehicleId, c.dv));
+    runClaims.push({ vehicleId: c.v.vehicleId, arrived: c.dv.arrived, ownerTaskId: c.task.id });
     const destIsBase = c.task.dest!.isBase || sameSpot(c.task.dest, input.base);
     matches.push({
       taskId: c.task.id, kind: "single", vehicleId: c.v.vehicleId, vehicleName: c.v.name, planned: c.planned, score: c.score,
@@ -331,6 +382,35 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
   }
   for (const t of singles) if (!done.has(t.id)) unmatched.push({ taskId: t.id, reason: t.dest ? "no truck stopped at the delivery address in this window" : "no delivery address" });
   return { matches, unmatched };
+}
+
+// ---------- auto status (v3.12.0, forward-only) ----------
+/** Statuses the updater may move forward from. Everything else (pending/planned, completed, missed, refused, cancelled…) is left alone. */
+export const AUTO_FROM: Record<"in_progress" | "completed", string[]> = { in_progress: ["assigned"], completed: ["assigned", "in_progress"] };
+/**
+ * What GPS says the status should be. Single: arrived at destination and left again → completed (at = arrival);
+ * at the destination now or left origin → in_progress.
+ * Route: left origin (or reached any stop) → in_progress; route completion stays with the stop trigger.
+ * Stored gps_* values win over this run's match. Null = nothing to do. status_source 'manual' = hands off.
+ */
+export function autoStatusFor(t: Record<string, any>, stopRows: Record<string, any>[], m?: TaskMatch | null): { to: "in_progress" | "completed"; at: number } | null {
+  if (t.status_source === "manual") return null;
+  const st = String(t.status || "");
+  const ms = (v: any) => (v == null ? null : Date.parse(v));
+  const firstOf = (xs: (number | null | undefined)[]) => xs.filter((x): x is number => x != null).sort((a, b) => a - b)[0] ?? null;
+  if (t.is_route) {
+    const left = ms(t.gps_departed_at) ?? m?.origin?.departed ?? firstOf(stopRows.map((x) => ms(x.gps_arrived_at))) ?? firstOf((m?.stops || []).map((x) => x.visit?.arrived));
+    return left != null && AUTO_FROM.in_progress.includes(st) ? { to: "in_progress", at: left } : null;
+  }
+  const arr = ms(t.gps_arrived_at) ?? m?.dest?.arrived ?? null;
+  // Completed once the truck has LEFT the destination (completed_at = arrival time), so the driver keeps the whole visit to
+  // press Missed/Refused. Destination = McCook yard: the trip ends on arrival.
+  const terminal = normalizeAddress(t.delivery_address) === BASE_NORM;
+  const leftDest = ms(t.gps_left_destination_at) ?? (m?.dest && m.dest.arrived === arr ? m.dest.departed : null) ?? null;
+  if (arr != null && (terminal || leftDest != null)) return AUTO_FROM.completed.includes(st) ? { to: "completed", at: arr } : null;
+  if (arr != null) return AUTO_FROM.in_progress.includes(st) ? { to: "in_progress", at: ms(t.gps_departed_at) ?? m?.origin?.departed ?? arr } : null;
+  const left = ms(t.gps_departed_at) ?? m?.origin?.departed ?? null;
+  return left != null && AUTO_FROM.in_progress.includes(st) ? { to: "in_progress", at: left } : null;
 }
 
 // ---------- patches (only fields that are still NULL) ----------

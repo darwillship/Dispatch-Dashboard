@@ -14,8 +14,10 @@ const UNPLANNED_REFRESH_MS = 9 * 60_000;  // trucks not on an open task: re-read
 const UNPLANNED_SETTLE_MS = 7 * 60_000;   // ...and once more 7 min after their last report (so a fresh engine-off stop can reach 5 min)
 const UP_COLS = ["driver_id", "task_id", "after_stop_id", "engine_off_at", "engine_on_at", "departed_at", "idle_minutes", "engine_off_minutes", "location_name", "address", "lat", "lon", "saved_location_id"];
 const WRITE_MAX_AGE_DAYS = 1;          // writes only for today + yesterday (CT); older dates are dry-run only
+// v3.12.0 auto status: never touched by the updater (stuck in_progress routes + the combined pair). Also enforced in SQL (vzc_auto_status).
+const AUTO_STATUS_PROTECTED = [52, 58, 61, 78, 98, 107, 117, 140, 161, 162];
 const LIVE_STATE: Record<string, string> = { Moving: "Moving", Idle: "Idle", Stop: "Engine off" };
-const TASK_COLS = "id,title,status,task_type,work_date,scheduled_at,completed_at,assigned_driver_id,pickup_name,pickup_address,delivery_name,delivery_address,is_route,combined_into_task_id,gps_departed_at,gps_arrived_at,gps_left_destination_at,gps_vehicle_id,gps_source,gps_origin_engine_on_at,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_returned_base_at,gps_match_method,gps_match_distance_m";
+const TASK_COLS = "id,created_at,title,status,task_type,work_date,scheduled_at,completed_at,assigned_driver_id,pickup_name,pickup_address,delivery_name,delivery_address,is_route,combined_into_task_id,gps_departed_at,gps_arrived_at,gps_left_destination_at,gps_vehicle_id,gps_source,gps_origin_engine_on_at,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_returned_base_at,gps_match_method,gps_match_distance_m";
 const STOP_COLS = "id,task_id,seq,location_name,location_address,status,gps_arrived_at,gps_departed_at,gps_vehicle_id,gps_source,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_match_method,gps_match_distance_m";
 
 export interface SyncOptions { dryRun: boolean; dates?: string[]; vehicles?: string[]; source?: string; recompute?: boolean; assignSim?: { ignoreTrucksOf: number[]; allDay: boolean } }
@@ -220,6 +222,7 @@ export async function runSync(env: Env, opt: SyncOptions) {
 
   // 6) per date
   const trackCache = new Map<string, M.VehicleTrack>();
+  let autoStatusMissing = false;   // set once vzc_auto_status is found missing (pre-migration) → report-only
   for (const date of dates) {
     const dsum: any = { date, writes_allowed: !opt.dryRun && date >= writableFrom, open_tasks: 0, matched: [], unmatched: [], skipped: [], writes: 0, write_errors: [] };
     summary.dates.push(dsum);
@@ -239,6 +242,15 @@ export async function runSync(env: Env, opt: SyncOptions) {
     if (opt.recompute && opt.dryRun) {   // compare mode: pretend nothing is stored yet (never used for writes)
       for (const t of (trows || []) as any[]) for (const c of Object.keys(t)) if (c.startsWith("gps_")) t[c] = null;
       for (const s of (srows || []) as any[]) { for (const c of Object.keys(s)) if (c.startsWith("gps_")) s[c] = null; s.status = "pending"; }
+    }
+    // v3.12.0: visits already stored on ANY task/stop of this date (filled ones too) are owned — one physical visit, one owner.
+    const claimed: M.ClaimedVisit[] = [];
+    for (const t of (trows || []) as any[]) {
+      if (/cancel/i.test(t.status || "") || t.is_route) continue;
+      if (t.gps_arrived_at && t.gps_vehicle_id != null) claimed.push({ vehicleId: Number(t.gps_vehicle_id), arrived: Date.parse(t.gps_arrived_at), ownerTaskId: t.id });
+    }
+    for (const st of (srows || []) as any[]) {
+      if (st.gps_arrived_at && st.gps_vehicle_id != null) claimed.push({ vehicleId: Number(st.gps_vehicle_id), arrived: Date.parse(st.gps_arrived_at), ownerTaskId: st.task_id, ownerStopId: st.id });
     }
     for (const t of (trows || []) as any[]) {
       const skip = (why: string) => dsum.skipped.push({ task_id: t.id, why });
@@ -265,11 +277,12 @@ export async function runSync(env: Env, opt: SyncOptions) {
       targets.push({
         id: t.id, kind: t.is_route ? "route" : "single", title: t.title, driverId: t.assigned_driver_id, plannedVehicleId: planned.get(t.assigned_driver_id) ?? null,
         origin, dest, stops, existing: t, completedAt: t.completed_at ? Date.parse(t.completed_at) : null, scheduledAt: t.scheduled_at ? Date.parse(t.scheduled_at) : null,
+        createdAt: t.created_at ? Date.parse(t.created_at) : null,
       });
     }
     dsum.open_tasks = targets.length;
     const up = upDates.has(date);
-    if (!targets.length && !up) continue;
+    if (!targets.length && !up) { await autoStatus(date, dsum, (trows || []) as any[], (srows || []) as any[], []); continue; }
 
     // trucks worth fetching: planned trucks of open tasks (or every truck if a task has none / other trucks allowed)
     const needAll = env.allowOtherTruck || targets.some((t) => !t.plannedVehicleId && !t.existing.gps_vehicle_id);
@@ -313,9 +326,9 @@ export async function runSync(env: Env, opt: SyncOptions) {
       }
       tracks.push(trackCache.get(key)!);
     }
-    if (!tracks.length) { dsum.note = "no truck GPS in this window"; continue; }
+    if (!tracks.length) { dsum.note = "no truck GPS in this window"; await autoStatus(date, dsum, (trows || []) as any[], (srows || []) as any[], []); continue; }
 
-    const res = targets.length ? M.matchDay({ date, tasks: targets, vehicles: tracks, base, winStart, winEnd, allowOtherTruck: env.allowOtherTruck }) : { matches: [], unmatched: [] };
+    const res = targets.length ? M.matchDay({ date, tasks: targets, vehicles: tracks, base, winStart, winEnd, allowOtherTruck: env.allowOtherTruck, claimed }) : { matches: [], unmatched: [] };
     runMatches.set(date, res.matches);
     dsum.unmatched = res.unmatched;
     for (const m of res.matches) {
@@ -339,10 +352,42 @@ export async function runSync(env: Env, opt: SyncOptions) {
         }
       }
     }
+    await autoStatus(date, dsum, (trows || []) as any[], (srows || []) as any[], res.matches);
     if (up) {
       try { await unplannedForDate(date, dsum, tracks, res.matches, (trows || []) as any[], (srows || []) as any[], (plan || []) as any[], winStart, winEnd); }
       catch (e) { dsum.unplanned_error = String((e as Error)?.message || e).slice(0, 300); warnings.push("unplanned stops: " + dsum.unplanned_error); }
     }
+  }
+
+  // v3.12.0 auto status from GPS (forward-only). Singles: left origin → in_progress; arrived at destination → completed
+  // (completed_at = arrival). Routes: left origin → in_progress (completion stays with the stop trigger). The SQL function
+  // vzc_auto_status re-checks every guard atomically (protected ids, work_date >= today CT, status_source <> 'manual',
+  // allowed from-status, no driver Missed/Refused report) and stamps status_source='auto_gps' + status_auto_at.
+  async function autoStatus(date: string, dsum: any, trows: any[], srows: any[], matches: M.TaskMatch[]) {
+    if (date < today) return;
+    const byTask = new Map(matches.map((m) => [m.taskId, m]));
+    const out: any[] = [];
+    // status_source exists only after migration v312 — read it separately so a missing column never breaks the run
+    const srcOf = new Map<number, string | null>();
+    { const { data, error } = await db.from("dispatch_tasks").select("id,status_source").eq("work_date", date); if (!error) for (const r of (data || []) as any[]) srcOf.set(r.id, r.status_source); }
+    for (const t0 of trows) {
+      const t = { ...t0, status_source: srcOf.get(t0.id) ?? null };
+      if (AUTO_STATUS_PROTECTED.includes(t.id) || t.combined_into_task_id || !t.assigned_driver_id) continue;
+      if (env.excludeDrivers.includes(Number(t.assigned_driver_id))) continue;
+      const dec = M.autoStatusFor(t, srows.filter((x) => x.task_id === t.id), byTask.get(t.id));
+      if (!dec) continue;
+      const st = String(t.status || ""), to = dec.to, at = dec.at;
+      const row: any = { task_id: t.id, from: st, to, gps_time: M.ctClock(at), action: "would update (dry run)" };
+      out.push(row);
+      if (opt.dryRun || !dsum.writes_allowed) { if (!opt.dryRun) row.action = "not written (date not writable)"; continue; }
+      if (autoStatusMissing) { row.action = "report only (vzc_auto_status not installed yet)"; continue; }
+      const { data, error } = await db.rpc("vzc_auto_status", { p_task_id: t.id, p_to: to, p_completed_at: to === "completed" ? new Date(at!).toISOString() : null });
+      if (error) {
+        if (/vzc_auto_status|PGRST202|does not exist|schema cache/i.test(error.message + " " + (error as any).code)) { autoStatusMissing = true; row.action = "report only (vzc_auto_status not installed yet)"; summary.auto_status_note = "migration v312_auto_status not applied — auto status is report-only"; }
+        else { row.action = "error"; dsum.write_errors.push(`auto status #${t.id}: ${error.message}`); }
+      } else row.action = String(data);
+    }
+    if (out.length) dsum.auto_status = out;
   }
 
   async function unplannedForDate(date: string, dsum: any, tracks: M.VehicleTrack[], matches: M.TaskMatch[], trows: any[], srows: any[], plan: any[], winStart: number, winEnd: number) {
