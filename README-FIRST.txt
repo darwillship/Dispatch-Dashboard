@@ -1,3 +1,30 @@
+SHIFT Dispatch v3.9.0 — Live truck status + automatic Verizon Connect GPS updater (built, NOT scheduled yet)
+
+v3.9.0 (2026-10-08):
+- Live truck chip next to each driver's truck ("🟢 Moving 34 mph", "🟡 Idle", "⚫ Engine off since 9:36 AM",
+  "⚠ GPS feed paused"/"⚠ … · last GPS" when data is >10 min old, "📡 Waiting for GPS" until the updater runs),
+  plus a "🛰 Trucks" strip under the toolbar with every truck's status and address. Read-only (live-features.js,
+  table vehicle_live_location). Tooltips/CSV also show the new GPS detail: engine on at origin, engine off/on,
+  engine-off vs idle minutes on site, back at McCook, match method/distance.
+- Supabase Edge Function vzc-sync (supabase/functions/vzc-sync/, migration SUPABASE-VZC-SYNC.sql) reads Verizon Connect
+  Reveal (Fleetmatics REST) and fills GPS times on today's (and before noon, yesterday's) tasks and route stops.
+  It only fills columns that are still empty (manual values are never overwritten), never writes gps_drive_minutes /
+  gps_dwell_minutes, skips combined originals, and changes only times + route-stop status (pending→arrived→done,
+  forward only). Single-task status and stuck in_progress routes are never touched.
+  dry_run is the default: only {"dry_run": false} (the cron invoke) writes.
+- New columns: dispatch_tasks gps_origin_engine_on_at, gps_engine_off_at, gps_engine_on_at, gps_idle_minutes,
+  gps_engine_off_minutes, gps_returned_base_at, gps_match_method, gps_match_distance_m; dispatch_task_stops
+  gps_engine_off_at, gps_engine_on_at, gps_idle_minutes, gps_engine_off_minutes, gps_match_method, gps_match_distance_m;
+  vehicles.vzc_vehicle_number. New tables: vehicle_live_location, geocode_cache, vzc_sync_runs, vzc_token (service only).
+- Secrets (never in the repo/chat): Supabase Dashboard → Edge Functions → Secrets: VZC_USERNAME
+  (REST_DarwillDispatchDashboard_6200@1185217.com), VZC_PASSWORD, VZC_APP_ID. Optional: VZC_EXCLUDE_DRIVER_IDS
+  (comma list), VZC_ALLOW_OTHER_TRUCK=true. Until they are set the function answers 503 "missing VZC_USERNAME/VZC_PASSWORD".
+- Go live: see the GO-LIVE block at the top of SUPABASE-VZC-SYNC.sql (Vault secret vzc_sync_service_key = legacy
+  service_role JWT, then select cron.schedule('vzc-sync', '*/3 * * * *', $c$select public.vzc_sync_invoke()$c$);).
+  Stop: select cron.unschedule('vzc-sync');
+- Deploy (bundle keeps the upload small): deno bundle --minify --external 'npm:*' -o index.js supabase/functions/vzc-sync/index.ts
+  then deploy index.js as the function's index.ts with verify_jwt on.
+
 SHIFT Dispatch v3.8.0 — Multi-stop routes
 
 v3.8.0 (2026-10-07):
@@ -71,4 +98,4 @@ New in v3.4.0 (full details: DRIVER-APP.md):
 - Suggest order (from History, only applied after you accept).
 - Location search, Task Type no longer defaults to shuttle, one driver status field.
 
-Files: index.html, shift-features.js, timesheet-features.js, truck-features.js, gps-features.js, routes-features.js, driver.html, sw.js, driver-manifest.webmanifest, icons/.
+Files: index.html, shift-features.js, timesheet-features.js, truck-features.js, gps-features.js, routes-features.js, live-features.js, driver.html, sw.js, driver-manifest.webmanifest, icons/, supabase/functions/vzc-sync/ (Edge Function), SUPABASE-*.sql (migrations, incl. SUPABASE-VZC-SYNC.sql).

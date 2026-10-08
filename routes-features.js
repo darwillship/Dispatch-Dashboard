@@ -10,6 +10,7 @@
    - Cards: stops in order with GPS leg timings, tappable per-stop status chip (pending → arrived → done).
      When every stop is done the database trigger completes the route.
    - Route History "Export tasks CSV": one row per stop for route tasks (normal tasks unchanged).
+   v3.9.0: legs show idle minutes; CSV appends stop engine-off/on, idle and match columns (vzc-sync).
    Writes are partial: dispatch_task_stops rows (never gps_* / generated columns) and the edited/combined
    dispatch_tasks fields only. */
 (function(){
@@ -81,7 +82,7 @@ function range(a,b){
   if(b)return "left "+clock(b);
   return "";
 }
-function legText(s){let p=[];if(s.leg_drive_minutes!=null)p.push(s.leg_drive_minutes+" min drive");if(s.gps_dwell_minutes!=null)p.push(s.gps_dwell_minutes+" min on site");return p.join(", ")}
+function legText(s){let p=[];if(s.leg_drive_minutes!=null)p.push(s.leg_drive_minutes+" min drive");if(s.gps_dwell_minutes!=null)p.push(s.gps_dwell_minutes+" min on site"+(s.gps_idle_minutes?` (${s.gps_idle_minutes} idle)`:""));return p.join(", ")}
 /* one-line summary, e.g. "Darwill McCook 1:58 PM → Federal Envelope 2:49–3:00 PM (51 min drive, 11 min on site) → …" */
 window.SHIFT_routeSummary=function(t){
   let st=STOPS[t.id]||[];
@@ -423,7 +424,8 @@ window.SHIFT_createRoute=async function(){
 };
 
 /* ---------- Route History CSV: one row per stop for route tasks ---------- */
-const STOP_COLS=["Is Route","Combined Into Task ID","Route Stop #","Route Stop Count","Stop Type","Stop Location","Stop Address","Stop Material","Stop Pallets","Stop Notes","Stop Status","Leg From","Stop Arrived (CT)","Stop Departed (CT)","Leg Drive Minutes","Stop On-Site Minutes","Stop GPS Truck","Planned Truck"];
+const STOP_COLS=["Is Route","Combined Into Task ID","Route Stop #","Route Stop Count","Stop Type","Stop Location","Stop Address","Stop Material","Stop Pallets","Stop Notes","Stop Status","Leg From","Stop Arrived (CT)","Stop Departed (CT)","Leg Drive Minutes","Stop On-Site Minutes","Stop GPS Truck","Planned Truck",
+  "Stop Engine Off (CT)","Stop Engine On (CT)","Stop Engine-Off Minutes","Stop Idle Minutes","Stop Match Method","Stop Match Distance (m)"];
 window.SHIFT_exportTasksCsv=async function(){
   let from=$("taskExpFrom").value,to=$("taskExpTo").value;
   if(from&&to&&from>to)return alert("The start date is after the end date.");
@@ -440,7 +442,9 @@ window.SHIFT_exportTasksCsv=async function(){
     s.forEach(x=>out.push({...base,"Route Stop #":x.stop_number,"Route Stop Count":x.stop_count,"Stop Type":x.stop_type,"Stop Location":x.location_name||"","Stop Address":x.location_address||"",
       "Stop Material":x.material||"","Stop Pallets":x.pallet_qty??"","Stop Notes":x.notes||"","Stop Status":x.status,"Leg From":x.prev_location_name||"",
       "Stop Arrived (CT)":stamp(x.gps_arrived_at),"Stop Departed (CT)":stamp(x.gps_departed_at),"Leg Drive Minutes":x.leg_drive_minutes??"","Stop On-Site Minutes":x.gps_dwell_minutes??"",
-      "Stop GPS Truck":x.gps_vehicle_name||"","Planned Truck":x.vehicle_name||""}));
+      "Stop GPS Truck":x.gps_vehicle_name||"","Planned Truck":x.vehicle_name||"",
+      "Stop Engine Off (CT)":stamp(x.gps_engine_off_at),"Stop Engine On (CT)":stamp(x.gps_engine_on_at),"Stop Engine-Off Minutes":x.gps_engine_off_minutes??"","Stop Idle Minutes":x.gps_idle_minutes??"",
+      "Stop Match Method":x.gps_match_method||"","Stop Match Distance (m)":x.gps_match_distance_m??""}));
   });
   SHIFT_csvDownload(`tasks_${from||"start"}_to_${to||"end"}.csv`,out);
 };

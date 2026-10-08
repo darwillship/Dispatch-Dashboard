@@ -1,4 +1,5 @@
 /* SHIFT Dispatch v3.7.0 — Verizon Connect Reveal GPS stop times on tasks (written by the Darwill GPS bot).
+   v3.9.0: tooltip/CSV also show the vzc-sync detail columns (engine off/on, idle, back at base, match method).
    - Task cards: "📍 Left 9:12 AM · Arrived 10:03 AM · 51 min drive · 21 min on site · Big Gray" (Central time).
    - Edit Task: the same line, read-only (not part of the form; never sent on save).
    - Route History: GPS line per completed route + "Export tasks CSV" (date range, all statuses, GPS columns).
@@ -39,7 +40,7 @@ function parts(t){
   if(t.gps_departed_at)p.push("Left "+ctTime(t.gps_departed_at,t));
   if(t.gps_arrived_at)p.push("Arrived "+ctTime(t.gps_arrived_at,t));
   if(t.gps_drive_minutes!=null)p.push(t.gps_drive_minutes+" min drive");
-  if(t.gps_dwell_minutes!=null)p.push(t.gps_dwell_minutes+" min on site");
+  if(t.gps_dwell_minutes!=null)p.push(t.gps_dwell_minutes+" min on site"+(t.gps_idle_minutes?` (${t.gps_idle_minutes} idle)`:""));
   else if(t.gps_left_destination_at)p.push("Left site "+ctTime(t.gps_left_destination_at,t));
   return p;
 }
@@ -48,6 +49,13 @@ function tip(t){
   if(t.gps_departed_at)r.push("Left origin: "+ctStamp(t.gps_departed_at));
   if(t.gps_arrived_at)r.push("Arrived: "+ctStamp(t.gps_arrived_at));
   if(t.gps_left_destination_at)r.push("Left destination: "+ctStamp(t.gps_left_destination_at));
+  /* v3.9.0 detail from the vzc-sync updater */
+  if(t.gps_origin_engine_on_at)r.push("Engine on at origin: "+ctStamp(t.gps_origin_engine_on_at));
+  if(t.gps_engine_off_at)r.push("Engine off at destination: "+ctStamp(t.gps_engine_off_at));
+  if(t.gps_engine_on_at)r.push("Engine on (leaving): "+ctStamp(t.gps_engine_on_at));
+  if(t.gps_engine_off_minutes!=null||t.gps_idle_minutes!=null)r.push(`On site: ${t.gps_engine_off_minutes??"?"} min engine off, ${t.gps_idle_minutes??"?"} min idling`);
+  if(t.gps_returned_base_at)r.push("Back at McCook: "+ctStamp(t.gps_returned_base_at));
+  if(t.gps_match_method)r.push("Matched by: "+t.gps_match_method.replace(":"," / ").replace(/_/g," ")+(t.gps_match_distance_m!=null?` (${t.gps_match_distance_m} m)`:""));
   if(t.gps_vehicle_id!=null)r.push("Truck: "+vehName(t.gps_vehicle_id));
   if(t.gps_source)r.push("Source: "+t.gps_source);
   if(t.gps_updated_at)r.push("Updated: "+ctStamp(t.gps_updated_at));
@@ -67,6 +75,14 @@ window.SHIFT_gpsCsvFields=function(t){
   return {"GPS Left Origin (CT)":ctStamp(t.gps_departed_at),"GPS Arrived (CT)":ctStamp(t.gps_arrived_at),"GPS Left Destination (CT)":ctStamp(t.gps_left_destination_at),
     "GPS Drive Minutes":t.gps_drive_minutes??"","GPS On-Site Minutes":t.gps_dwell_minutes??"","GPS Truck":t.gps_vehicle_id!=null?vehName(t.gps_vehicle_id):"","GPS Vehicle ID":t.gps_vehicle_id??"",
     "GPS Source":t.gps_source||"","GPS Updated (CT)":ctStamp(t.gps_updated_at)};
+};
+
+/* v3.9.0: extra vzc-sync columns, appended at the END of the tasks CSV so existing column positions don't move */
+window.SHIFT_gpsDetailCsvFields=function(t){
+  t=t||{};
+  return {"GPS Engine On at Origin (CT)":ctStamp(t.gps_origin_engine_on_at),"GPS Engine Off (CT)":ctStamp(t.gps_engine_off_at),"GPS Engine On (CT)":ctStamp(t.gps_engine_on_at),
+    "GPS Engine-Off Minutes":t.gps_engine_off_minutes??"","GPS Idle Minutes":t.gps_idle_minutes??"","GPS Back at Base (CT)":ctStamp(t.gps_returned_base_at),
+    "GPS Match Method":t.gps_match_method||"","GPS Match Distance (m)":t.gps_match_distance_m??""};
 };
 
 /* task cards */
@@ -123,7 +139,7 @@ window.SHIFT_taskCsvRows=function(from,to){
     .map(t=>{let d=(drivers||[]).find(x=>Number(x.id)===Number(t.assigned_driver_id));
       return Object.assign({"Task ID":t.id,"Work Date":taskDate(t)||"",Type:t.task_type||"",Status:t.status||"",Stage:t.planning_stage||"",Priority:t.priority||"",Driver:d?d.name:"",
         Pickup:t.pickup_name||"","Pickup Address":t.pickup_address||"",Delivery:t.delivery_name||"","Delivery Address":t.delivery_address||"","Job / Client":t.job_client||"",Material:t.material||"",Pallets:t.pallet_qty??"",
-        "Scheduled (CT)":ctStamp(t.scheduled_at),"Completed (CT)":ctStamp(t.completed_at)},SHIFT_gpsCsvFields(t),{Instructions:t.instructions||""})});
+        "Scheduled (CT)":ctStamp(t.scheduled_at),"Completed (CT)":ctStamp(t.completed_at)},SHIFT_gpsCsvFields(t),{Instructions:t.instructions||""},SHIFT_gpsDetailCsvFields(t))});
 };
 window.SHIFT_exportTasksCsv=function(){
   let from=$("taskExpFrom").value,to=$("taskExpTo").value;
