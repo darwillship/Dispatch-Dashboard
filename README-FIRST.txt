@@ -1,3 +1,10 @@
+SHIFT Dispatch v3.11.0 (2026-10-08): AUTOMATIC TRUCK ASSIGNMENT + unplanned stops follow the schedule.
+- When a truck starts and exactly one scheduled, on-shift driver has no truck, the Verizon updater (vzc-sync) sets that driver's truck for the date. It shows a small "auto" badge on the driver card and in Driver Schedule -> Daily Overrides; changing the truck there makes it a manual pick, which is never overwritten.
+- If two or more drivers fit, nothing is assigned. A blue strip asks "Big Blue started 5:02 AM. Juan or Jay?" - one click sets it, the X leaves it unassigned. One decision per truck per date, so it never asks again.
+- A Time Sheet clock-in or pre-trip naming the truck within 30 minutes of the start wins (it must name a real truck, e.g. "McCook Van").
+- Unplanned stops are re-checked every run: a stop with no driver (or a driver who no longer matches) moves to whoever had that truck on shift then, using shift times with a 1-hour grace (overnight shifts like Jay's 9:00 PM-5:30 AM keep their after-midnight stops, dated to the shift's day). Kept/Ignored is never touched.
+- Only ignitions from the last 3 hours are auto-assigned, so turning this on never back-fills old days.
+
 SHIFT Dispatch v3.10.0 (2026-10-08): AUTOMATIC UNPLANNED STOPS.
 The Verizon updater (vzc-sync, every 3 min) now logs any stop where a truck sat with the engine OFF for 5+ minutes
 away from McCook base, the truck's overnight spot and every planned task/stop that day. Saved in public.unplanned_stops

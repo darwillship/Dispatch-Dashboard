@@ -1,8 +1,10 @@
-/* SHIFT Dispatch v3.6.0 — trucks per driver (names match Verizon Connect Reveal).
+/* SHIFT Dispatch v3.11.0 (trucks since v3.6.0) — trucks per driver (names match Verizon Connect Reveal).
    - Driver Schedule → Weekly Schedule: "Default truck" per driver  -> drivers.default_vehicle_id (saves on change).
    - Driver Schedule → Daily Overrides: "Truck" per driver/date      -> driver_schedule.vehicle_id (saved with Save Overrides).
    - Driver card header shows the resolved truck for the board date.
    Rule (same as the driver_daily_vehicle view): coalesce(driver_schedule.vehicle_id for driver+date, drivers.default_vehicle_id).
+   v3.11.0: a daily truck set automatically by the Verizon updater (driver_schedule.vehicle_source = auto_gps) shows an "auto" badge;
+   changing it in Daily Overrides makes it manual (a database trigger flips vehicle_source to manual).
    Writes: one drivers row (default_vehicle_id only) per change; driver_schedule rows only through the existing Save Overrides flow. */
 (function(){
 let VEH=[];window.SHIFT_vehicles=VEH;
@@ -19,6 +21,8 @@ const css=`
 body.light-mode .driver-truck{background:#eef4fa!important;border-color:#c9d8e6!important;color:#1d3a55!important}
 body.light-mode .driver-truck.none{color:#6b7f90!important}
 body.light-mode .truck-pick{color:#3a5164}
+.auto-badge{display:inline-block;margin-left:4px;padding:0 5px;border-radius:6px;background:#2a4a72;color:#bfe0ff;font-size:9.5px;font-weight:900;letter-spacing:.03em;vertical-align:1px}
+body.light-mode .auto-badge{background:#d6e9fb!important;color:#184a78!important}
 `;
 const st=document.createElement("style");st.textContent=css;document.head.appendChild(st);
 
@@ -38,7 +42,7 @@ window.load=async function(...a){await fetchVehicles();return origLoad.apply(thi
 window.SHIFT_resolveTruck=function(driverId,date){
   date=date||boardDate;
   let ov=(driverSchedule||[]).find(x=>Number(x.driver_id)===Number(driverId)&&String(x.work_date).slice(0,10)===String(date).slice(0,10));
-  if(ov&&ov.vehicle_id)return{id:Number(ov.vehicle_id),name:vName(ov.vehicle_id),source:"override"};
+  if(ov&&ov.vehicle_id)return{id:Number(ov.vehicle_id),name:vName(ov.vehicle_id),source:"override",auto:ov.vehicle_source==="auto_gps"};
   let d=(drivers||[]).find(x=>Number(x.id)===Number(driverId));
   if(d&&d.default_vehicle_id)return{id:Number(d.default_vehicle_id),name:vName(d.default_vehicle_id),source:"default"};
   return null;
@@ -46,7 +50,8 @@ window.SHIFT_resolveTruck=function(driverId,date){
 window.SHIFT_truckBadge=function(d){
   let t=SHIFT_resolveTruck(d.id);
   if(!t)return `<div class="driver-truck none" onclick="openDriverSchedule()" title="No truck set — pick a default truck or a daily truck in Driver Schedule">🚛 No truck</div>`;
-  return `<div class="driver-truck" onclick="openDriverSchedule()" title="${t.source==="override"?"Daily truck for this date (Driver Schedule → Daily Overrides)":"Default truck (Driver Schedule → Weekly Schedule)"}">🚛 ${esc(t.name||("Vehicle #"+t.id))}${t.source==="override"?' <span class="src-tag">this date</span>':""}</div>`;
+  let why=t.auto?"Set automatically from this truck's GPS ignition today. Change it in Driver Schedule → Daily Overrides anytime (that makes it a manual pick)":t.source==="override"?"Daily truck for this date (Driver Schedule → Daily Overrides)":"Default truck (Driver Schedule → Weekly Schedule)";
+  return `<div class="driver-truck" onclick="openDriverSchedule()" title="${why}">🚛 ${esc(t.name||("Vehicle #"+t.id))}${t.source==="override"?' <span class="src-tag">this date</span>':""}${t.auto?' <span class="auto-badge">auto</span>':""}</div>`;
 };
 
 /* Weekly Schedule tab: default truck per driver (saves immediately) */
@@ -66,7 +71,8 @@ window.SHIFT_saveDefaultTruck=async function(sel){
 /* Daily Overrides tab: per-date truck (stored on the driver_schedule row with the override) */
 window.SHIFT_overrideTruckSelect=function(d,r){
   let def=vName(d.default_vehicle_id);
-  return `<select class="schedule-vehicle" title="Truck for this date. Choosing a truck turns Override on for this driver/date.">${options(r?.vehicle_id??null,def?`Default (${def})`:"— none —")}</select>`;
+  let auto=r&&r.vehicle_source==="auto_gps"&&r.vehicle_id?`<span class="auto-badge" title="Set automatically from this truck's GPS ignition. Pick a different truck here and Save Overrides to make it a manual pick.">auto</span>`:"";
+  return `<span style="display:inline-flex;align-items:center;gap:4px"><select class="schedule-vehicle" title="Truck for this date. Choosing a truck turns Override on for this driver/date.">${options(r?.vehicle_id??null,def?`Default (${def})`:"— none —")}</select>${auto}</span>`;
 };
 document.addEventListener("change",e=>{
   if(!e.target.matches||!e.target.matches(".schedule-vehicle"))return;

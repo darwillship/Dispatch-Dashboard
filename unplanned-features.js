@@ -1,4 +1,4 @@
-/* SHIFT Dispatch v3.10.0 — automatic UNPLANNED STOPS.
+/* SHIFT Dispatch v3.11.0 — automatic UNPLANNED STOPS (since v3.10.0).
    Rows come from public.unplanned_stops (written by the Verizon updater, vzc-sync). The dashboard only reads them
    and lets the dispatcher ✓ Keep / ✕ Ignore (it can update review_status + reviewed_at, nothing else).
    - stop during a route  → dashed row inside the route card, right after the stop it came after
@@ -29,7 +29,13 @@ body.light-mode .up-row{background:#fff6e3!important;border-color:#c98a0c!import
 body.light-mode .up-row .up-name{color:#3b2a06!important}body.light-mode .up-row .up-time{color:#6b5320!important}body.light-mode .up-row .up-sub{color:#6d5f45!important}
 body.light-mode .up-row .up-tag,body.light-mode .up-card-title,body.light-mode #unplannedStrip .us-title{color:#a46c00!important}
 body.light-mode .up-row.up-kept{background:#e9f7ef!important;border-color:#2f8a56!important}body.light-mode .up-row.up-ignored{background:transparent!important}
-body.light-mode #unplannedStrip .us-truck{color:#0d1824!important}`;
+body.light-mode #unplannedStrip .us-truck{color:#0d1824!important}
+#assignStrip{margin:0 0 10px;padding:7px 9px;border:1.5px solid #3d7ec2;border-radius:12px;font-size:12.5px;background:rgba(61,126,194,.08)}
+#assignStrip .as-title{font-weight:900;color:#9fd0ff;margin-bottom:3px}
+#assignStrip .as-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0;font-weight:800;color:#e6eef6}
+#assignStrip .as-row .mini{padding:3px 9px;font-size:12px;font-weight:900}
+body.light-mode #assignStrip{background:#eef5fc!important;border-color:#2f6eae!important}
+body.light-mode #assignStrip .as-title{color:#1a4f86!important}body.light-mode #assignStrip .as-row{color:#0d1824!important}`;
 const st=document.createElement("style");st.textContent=css;document.head.appendChild(st);
 
 let UP=[],PLACE=new Map(),showIgnored=sessionStorage.getItem("shift-up-ignored")==="1";
@@ -134,9 +140,40 @@ window.SHIFT_upReview=async function(id,status){
   u.review_status=status;u.reviewed_at=when;render();
 };
 const origRender=window.render;
-window.render=function(...a){computePlacement();let r=origRender.apply(this,a);try{renderStrip()}catch(e){console.warn("unplanned strip",e)}return r};
+/* v3.11.0: "Big Blue started 5:02 AM. Juan or Jay?" — one click sets the daily truck (manual pick) */
+let SUG=[];
+async function fetchSuggestions(){
+  try{let r=await db.from("vehicle_assignment_suggestions").select("*").eq("work_date",boardDate).eq("status","pending");
+    if(r.error){console.warn("truck suggestions unavailable",r.error);SUG=[];return}SUG=r.data||[]}catch(e){console.warn("truck suggestions unavailable",e);SUG=[]}}
+function renderAssignStrip(){
+  let el=$("assignStrip");
+  if(!SUG.length){if(el)el.remove();return}
+  if(!el){el=document.createElement("div");el.id="assignStrip";let up=$("unplannedStrip"),at=$("fleetStrip")||document.querySelector(".toolbar");if(up)up.insertAdjacentElement("beforebegin",el);else if(at)at.insertAdjacentElement("afterend",el);else return}
+  el.innerHTML=`<div class="as-title">Who started this truck?</div>`+SUG.map(g=>{
+    let btns=(g.candidate_driver_ids||[]).map(id=>`<button type="button" class="mini" onclick="SHIFT_assignPick(${g.id},${Number(id)})">${esc(dName(id)||("Driver #"+id))}</button>`).join("");
+    return `<div class="as-row">🚛 ${esc(vName(g.vehicle_id))} started ${esc(clk(g.ignition_at))}. ${btns} <button type="button" class="mini" onclick="SHIFT_assignDismiss(${g.id})" title="Leave it unassigned">✕</button></div>`;
+  }).join("");
+}
+window.SHIFT_assignPick=async function(sugId,driverId){
+  let g=SUG.find(x=>x.id===sugId);if(!g)return;
+  let sch=typeof effectiveDriverSchedule==="function"?effectiveDriverSchedule(driverId):null;
+  let on=sch&&(sch.status==="working"||sch.status==="messenger");
+  let payload={work_date:boardDate,driver_id:Number(driverId),status:on?sch.status:"working",start_time:on&&sch.start_time||null,end_time:on&&sch.end_time||null,note:sch&&sch.source==="override"?(sch.note||null):null,vehicle_id:Number(g.vehicle_id)};
+  let r=await db.from("driver_schedule").upsert(payload,{onConflict:"work_date,driver_id"});
+  if(r.error)return alert("Could not set the truck: "+r.error.message);
+  let u=await db.from("vehicle_assignment_suggestions").update({status:"accepted",chosen_driver_id:Number(driverId),resolved_at:new Date().toISOString()}).eq("id",sugId);
+  if(u.error)return alert("Truck saved, but the prompt could not be cleared: "+u.error.message);
+  await load();
+};
+window.SHIFT_assignDismiss=async function(sugId){
+  let r=await db.from("vehicle_assignment_suggestions").update({status:"dismissed",resolved_at:new Date().toISOString()}).eq("id",sugId);
+  if(r.error)return alert("Could not dismiss: "+r.error.message);
+  SUG=SUG.filter(x=>x.id!==sugId);render();
+};
+
+window.render=function(...a){computePlacement();let r=origRender.apply(this,a);try{renderStrip()}catch(e){console.warn("unplanned strip",e)}try{renderAssignStrip()}catch(e){console.warn("assign strip",e)}return r};
 const origLoad=window.load;
-window.load=async function(...a){await fetchUP();return origLoad.apply(this,a)};
+window.load=async function(...a){await Promise.all([fetchUP(),fetchSuggestions()]);return origLoad.apply(this,a)};
 
 /* Tasks CSV: unplanned stops become extra rows (Unplanned = yes) next to the route stop / task they belong to */
 window.SHIFT_unplannedCsv=async function(out,from,to,byId){
@@ -178,5 +215,5 @@ window.SHIFT_unplannedCsv=async function(out,from,to,byId){
   return out;
 };
 
-fetchUP().then(()=>{try{render()}catch(_){}});
+Promise.all([fetchUP(),fetchSuggestions()]).then(()=>{try{render()}catch(_){}});
 })();

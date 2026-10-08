@@ -1,8 +1,8 @@
-/* SHIFT Driver service worker (v3.10.0)
+/* SHIFT Driver service worker (v3.11.0)
    - Makes driver.html installable as a PWA.
    - Shows local notifications posted by the page (no server push yet).
    - A `push` handler is included so real Web Push works once VAPID keys + a sender exist. */
-const SW_VERSION = "shift-driver-v3.10.0";
+const SW_VERSION = "shift-driver-v3.11.0";
 self.addEventListener("install", e => self.skipWaiting());
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", () => {}); // network-only; live data must never be stale
