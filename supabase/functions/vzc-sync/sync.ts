@@ -3,6 +3,7 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import * as M from "./match.ts";
 import * as U from "./unplanned.ts";
+import * as A from "./assign.ts";
 import { geocodeAddress } from "./geocode.ts";
 
 const API = "https://fim.api.us.fleetmatics.com";
@@ -17,7 +18,7 @@ const LIVE_STATE: Record<string, string> = { Moving: "Moving", Idle: "Idle", Sto
 const TASK_COLS = "id,title,status,task_type,work_date,scheduled_at,completed_at,assigned_driver_id,pickup_name,pickup_address,delivery_name,delivery_address,is_route,combined_into_task_id,gps_departed_at,gps_arrived_at,gps_left_destination_at,gps_vehicle_id,gps_source,gps_origin_engine_on_at,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_returned_base_at,gps_match_method,gps_match_distance_m";
 const STOP_COLS = "id,task_id,seq,location_name,location_address,status,gps_arrived_at,gps_departed_at,gps_vehicle_id,gps_source,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_match_method,gps_match_distance_m";
 
-export interface SyncOptions { dryRun: boolean; dates?: string[]; vehicles?: string[]; source?: string; recompute?: boolean }
+export interface SyncOptions { dryRun: boolean; dates?: string[]; vehicles?: string[]; source?: string; recompute?: boolean; assignSim?: { ignoreTrucksOf: number[]; allDay: boolean } }
 export interface Env { username: string; password: string; appId: string; supabaseUrl: string; serviceKey: string; excludeDrivers: number[]; allowOtherTruck: boolean }
 
 // ---------------- Verizon client ----------------
@@ -159,6 +160,31 @@ export async function runSync(env: Env, opt: SyncOptions) {
   }
   const base = M.makePlace("Darwill McCook", M.BASE_ADDRESS, null)!;
 
+  // driver roster + schedules (v3.11.0): who had which truck when (shift times, overnight shifts, daily picks, defaults)
+  let roster: { drivers: A.DriverRow[]; weekly: A.WeeklyRow[]; sched: A.SchedRow[] } | null = null;
+  async function loadRoster(fresh = false) {
+    if (roster && !fresh) return roster;
+    const lo = addDays(dates[0] < today ? dates[0] : today, -2), hi = addDays(today, 1);
+    const [d, w, s] = await Promise.all([
+      db.from("drivers").select("id,name,active,default_vehicle_id").order("id"),
+      db.from("driver_weekly_schedule").select("driver_id,day_of_week,working,start_time,end_time"),
+      db.from("driver_schedule").select("*").gte("work_date", lo).lte("work_date", hi),
+    ]);
+    if (d.error) throw new Error("read drivers: " + d.error.message);
+    if (w.error) warnings.push("read driver_weekly_schedule: " + w.error.message);
+    if (s.error) warnings.push("read driver_schedule: " + s.error.message);
+    roster = { drivers: (d.data || []) as any, weekly: (w.data || []) as any, sched: (s.data || []) as any };
+    return roster;
+  }
+  /** shifts of `date` and the day before (overnight shifts own their after-midnight time) */
+  async function shiftsAround(date: string, fresh = false): Promise<A.Shift[]> {
+    const r = await loadRoster(fresh);
+    const out = [...A.shiftsFor(addDays(date, -1), r.drivers, r.sched, r.weekly), ...A.shiftsFor(date, r.drivers, r.sched, r.weekly)];
+    if (opt.dryRun && opt.assignSim?.ignoreTrucksOf.length) for (const s of out) if (opt.assignSim.ignoreTrucksOf.includes(s.driverId)) { s.vehicleId = null; s.vehicleSource = null; s.auto = false; }
+    return out;
+  }
+  const runMatches = new Map<string, M.TaskMatch[]>();
+
   // 5) unplanned stops (v3.10.0): today's date (or explicitly requested dates). Saved only once the table exists.
   const upDates = new Set(dates.filter((d) => d === today || !!opt.dates?.length));
   let upTable = false;
@@ -290,6 +316,7 @@ export async function runSync(env: Env, opt: SyncOptions) {
     if (!tracks.length) { dsum.note = "no truck GPS in this window"; continue; }
 
     const res = targets.length ? M.matchDay({ date, tasks: targets, vehicles: tracks, base, winStart, winEnd, allowOtherTruck: env.allowOtherTruck }) : { matches: [], unmatched: [] };
+    runMatches.set(date, res.matches);
     dsum.unmatched = res.unmatched;
     for (const m of res.matches) {
       const task = targets.find((t) => t.id === m.taskId)!;
@@ -335,12 +362,14 @@ export async function runSync(env: Env, opt: SyncOptions) {
     }
     let existing: any[] = [];
     if (upTable) {
-      const { data, error } = await db.from("unplanned_stops").select("*").eq("work_date", date);
+      // by time, not work_date: re-attribution may move an overnight stop to the shift's date (v3.11.0)
+      const { data, error } = await db.from("unplanned_stops").select("*").gte("arrived_at", new Date(winStart - 12 * 3600e3).toISOString()).lt("arrived_at", new Date(dayEnd + 12 * 3600e3).toISOString());
       if (error) throw new Error("read unplanned_stops: " + error.message);
       existing = data || [];
     }
     dsum.unplanned = []; dsum.unplanned_idle = []; dsum.unplanned_checked = []; dsum.unplanned_writes = 0;
     const canWrite = dsum.writes_allowed && upTable;
+    const shifts = await shiftsAround(date);
     for (const tr of tracks) {
       const v = tr.vehicleId;
       const schedDrivers = plan.filter((p: any) => p.vehicle_id === v && working(p)).map((p: any) => Number(p.driver_id));
@@ -380,12 +409,16 @@ export async function runSync(env: Env, opt: SyncOptions) {
       for (const c of judged.filter((c) => c.verdict === "unplanned")) {
         const at = U.attachStop(c.arrived, spans, baseArr);
         const task = at.taskId != null ? live.find((t) => t.id === at.taskId) : null;
-        const driverId = task?.assigned_driver_id ?? (truckDrivers.length === 1 ? truckDrivers[0] : schedDrivers.length === 1 ? schedDrivers[0] : null);
+        // driver: the task's driver, else whoever had this truck on their shift then (schedule + shift times), else the one driver with tasks on it
+        const who = A.whoHadTruck(v, c.arrived, shifts, env.excludeDrivers);
+        let driverId: number | null = task?.assigned_driver_id ?? who?.driverId ?? null;
+        if (driverId == null && truckDrivers.length === 1) { const s = shifts.find((x) => x.driverId === truckDrivers[0] && x.date === date); if (!s || A.covers(s, c.arrived)) driverId = truckDrivers[0]; }
+        const workDate = !task && who && who.driverId === driverId ? who.date : date;
         if (driverId != null && env.excludeDrivers.includes(Number(driverId))) continue;
         const nm = U.nameFor(c, await namedPlaces());
         const done = c.departed != null;
         const row: Record<string, any> = {
-          work_date: date, vehicle_id: v, driver_id: driverId, task_id: at.taskId, after_stop_id: at.afterStopId,
+          work_date: workDate, vehicle_id: v, driver_id: driverId, task_id: at.taskId, after_stop_id: at.afterStopId,
           arrived_at: new Date(c.arrived).toISOString(), engine_off_at: c.engineOff != null ? new Date(c.engineOff).toISOString() : null,
           engine_on_at: done && c.engineOn != null ? new Date(c.engineOn).toISOString() : null, departed_at: done ? new Date(c.departed!).toISOString() : null,
           idle_minutes: done ? c.idleMinutes : null, engine_off_minutes: done ? c.offMinutes : null,
@@ -412,6 +445,146 @@ export async function runSync(env: Env, opt: SyncOptions) {
           else { dsum.unplanned_writes += (data || []).length; if (data?.[0]) existing.push({ ...row, id: data[0].id }); }
         }
       }
+    }
+  }
+
+  // 7) automatic truck assignment (v3.11.0) — needs this run's tracks; then 8) re-attribution of unplanned stops (database only)
+  // writes need the v3.11.0 migration (vehicle_assignment_suggestions + driver_schedule.vehicle_source); before that: report only
+  let reportOnly = opt.dryRun;
+  if (upDates.has(today) && upTable) {
+    const { error: ge } = await db.from("vehicle_assignment_suggestions").select("id").limit(1);
+    if (ge) { reportOnly = true; summary.v311_note = "v3.11.0 migration not applied yet — truck auto-assign and re-attribution are report-only"; }
+  }
+  if (upDates.has(today) && upTable) {
+    try { await autoAssign(); } catch (e) { summary.assign_error = String((e as Error)?.message || e).slice(0, 300); warnings.push("auto truck assignment: " + summary.assign_error); }
+    try { await reattribute(); } catch (e) { summary.reattribute_error = String((e as Error)?.message || e).slice(0, 300); warnings.push("unplanned re-attribution: " + summary.reattribute_error); }
+  }
+
+  async function autoAssign() {
+    const sim = opt.dryRun ? opt.assignSim : undefined;
+    const out: any = { decisions: [], writes: 0, write_errors: [] as string[], simulated: !!sim, report_only: reportOnly };
+    summary.assign = out;
+    const tracksToday = [...trackCache.entries()].filter(([k]) => k.endsWith("|" + today)).map(([, tr]) => tr);
+    const ign = tracksToday.flatMap((tr) => A.ignitions(tr.tl, tr.vehicleId, tr.name))
+      .filter((i) => (sim?.allDay ? i.t >= M.ctMidnightUtc(addDays(today, -1)) : i.t >= Date.now() - A.AUTO_ASSIGN_LOOKBACK_MS))
+      .sort((a, b) => a.t - b.t);
+    out.ignitions = ign.length;
+    if (!ign.length) return;
+    const shifts = await shiftsAround(today, true);
+    // Time Sheet clock-ins / pre-trips (vehicle names are free text; only names that map to a Reveal truck count)
+    const lo = addDays(today, -1);
+    const [sh, pt] = await Promise.all([
+      db.from("driver_shifts").select("driver_id,vehicle,started_at_device,created_at,work_date").gte("work_date", lo),
+      db.from("driver_pretrips").select("driver_id,vehicle,submitted_at,created_at,work_date").gte("work_date", lo),
+    ]);
+    if (sh.error) warnings.push("read driver_shifts: " + sh.error.message);
+    if (pt.error) warnings.push("read driver_pretrips: " + pt.error.message);
+    const clockins: A.ClockIn[] = [];
+    const unmapped = new Set<string>();
+    for (const r of (sh.data || []) as any[]) { const vid = A.mapVehicleName(r.vehicle, vehicles); const t = Date.parse(r.started_at_device || r.created_at); if (vid != null && r.driver_id != null && t) clockins.push({ driverId: Number(r.driver_id), vehicleId: vid, t, kind: "time sheet clock-in" }); else if (r.vehicle) unmapped.add(r.vehicle); }
+    for (const r of (pt.data || []) as any[]) { const vid = A.mapVehicleName(r.vehicle, vehicles); const t = Date.parse(r.submitted_at || r.created_at); if (vid != null && r.driver_id != null && t) clockins.push({ driverId: Number(r.driver_id), vehicleId: vid, t, kind: "pre-trip" }); else if (r.vehicle) unmapped.add(r.vehicle); }
+    if (unmapped.size) out.unmapped_time_sheet_vehicles = [...unmapped];
+    const { data: logRows } = reportOnly && summary.v311_note ? { data: [] as any[] } : await db.from("vehicle_assignment_suggestions").select("work_date,vehicle_id,status").gte("work_date", addDays(today, -1));
+    const decided = new Set((logRows || []).map((r: any) => `${r.work_date}|${r.vehicle_id}`));
+    const nameOf = (id: number) => roster!.drivers.find((d) => Number(d.id) === id)?.name || `driver #${id}`;
+    for (const i of ign) {
+      const cal = A.ctDate(i.t);
+      const sh2 = shifts.filter((s) => s.date === cal || s.date === addDays(cal, -1));
+      const d = A.decideAssign(i, sh2, clockins, env.excludeDrivers);
+      const rec: any = { truck: i.vehicleName, ignition: A.ctClock(i.t), ignition_date: cal, action: d.action, reason: d.reason, candidates: d.candidates.map(nameOf) };
+      out.decisions.push(rec);
+      if (d.action === "none") continue;
+      const key = `${d.date}|${i.vehicleId}`;
+      if (decided.has(key) && !sim) { rec.action += " (skipped: already decided for this truck/date)"; continue; }
+      decided.add(key);
+      if (d.action === "assign") {
+        rec.driver = nameOf(d.driverId); rec.date = d.date;
+        A.applyAssign(shifts, d.driverId, d.date, i.vehicleId);
+        if (reportOnly) { rec.action += " (report only, not saved)"; continue; }
+        const s = shifts.find((x) => x.driverId === d.driverId && x.date === d.date)!;
+        let ok = false;
+        if (s.row?.id != null) {
+          const { error, count } = await db.from("driver_schedule").update({ vehicle_id: i.vehicleId, vehicle_source: "auto_gps", auto_assigned_at: nowIso }, { count: "exact" }).eq("id", s.row.id).is("vehicle_id", null);
+          if (error) out.write_errors.push(`schedule #${s.row.id}: ${error.message}`); else ok = (count || 0) > 0;
+        } else {
+          const w = s.weekly;   // same as picking a daily truck in Driver Schedule: the override row keeps the weekly status/times
+          const { data, error } = await db.from("driver_schedule").upsert({ work_date: d.date, driver_id: d.driverId, status: "working", start_time: w?.start_time ?? null, end_time: w?.end_time ?? null, note: null, vehicle_id: i.vehicleId, vehicle_source: "auto_gps", auto_assigned_at: nowIso }, { onConflict: "work_date,driver_id", ignoreDuplicates: true }).select("id");
+          if (error) out.write_errors.push(`schedule insert ${nameOf(d.driverId)} ${d.date}: ${error.message}`); else ok = (data || []).length > 0;
+        }
+        rec.saved = ok;
+        if (ok) {
+          out.writes++;
+          await db.from("vehicle_assignment_suggestions").upsert({ work_date: d.date, vehicle_id: i.vehicleId, ignition_at: new Date(i.t).toISOString(), candidate_driver_ids: d.candidates, status: "auto_assigned", chosen_driver_id: d.driverId, reason: d.reason, resolved_at: nowIso }, { onConflict: "work_date,vehicle_id", ignoreDuplicates: true });
+        }
+      } else if (d.action === "suggest") {
+        if (reportOnly) { rec.action += " (report only, not saved)"; continue; }
+        const { error } = await db.from("vehicle_assignment_suggestions").upsert({ work_date: d.date, vehicle_id: i.vehicleId, ignition_at: new Date(i.t).toISOString(), candidate_driver_ids: d.candidates, status: "pending", reason: d.reason }, { onConflict: "work_date,vehicle_id", ignoreDuplicates: true });
+        if (error) out.write_errors.push(`suggestion ${i.vehicleName}: ${error.message}`); else out.writes++;
+      }
+    }
+  }
+
+  /** Re-attribution: unplanned stops whose driver is empty or no longer matches the schedule move to the right driver
+   *  (and onto that driver's task/route when the truck was working one). review_status is never touched. */
+  async function reattribute() {
+    const out: any = { moved: [], checked: 0, write_errors: [] as string[], report_only: reportOnly };
+    summary.reattribute = out;
+    const from = addDays(today, -1);
+    const { data: rows, error } = await db.from("unplanned_stops").select("*").gte("arrived_at", new Date(M.ctMidnightUtc(from)).toISOString()).order("arrived_at");
+    if (error) throw new Error("read unplanned_stops: " + error.message);
+    if (!rows?.length) return;
+    await loadRoster(true);
+    const shiftCache = new Map<string, A.Shift[]>();
+    const shiftsAt = async (cal: string) => { if (!shiftCache.has(cal)) shiftCache.set(cal, await shiftsAround(cal)); return shiftCache.get(cal)!; };
+    const days = [addDays(from, -1), from, today];
+    const { data: trows, error: te } = await db.from("dispatch_tasks").select(TASK_COLS).in("work_date", days);
+    if (te) throw new Error("read tasks: " + te.message);
+    const routeIds = (trows || []).filter((t: any) => t.is_route).map((t: any) => t.id);
+    const { data: srows } = routeIds.length ? await db.from("dispatch_task_stops").select(STOP_COLS).in("task_id", routeIds).order("seq") : { data: [] as any[] };
+    const live = ((trows || []) as any[]).filter((t) => !/cancel/i.test(t.status || ""));
+    const ms = (x: any) => (x == null ? null : Date.parse(x));
+    const vehOf = (t: any): number | null => (runMatches.get(t.work_date) || []).find((m) => m.taskId === t.id)?.vehicleId ?? (t.gps_vehicle_id != null ? Number(t.gps_vehicle_id) : null);
+    const spansFor = (v: number, date: string): U.TaskSpan[] => {
+      const res: U.TaskSpan[] = [];
+      for (const t of live.filter((t) => t.work_date === date && vehOf(t) === v && !t.combined_into_task_id)) {
+        const m = (runMatches.get(date) || []).find((x) => x.taskId === t.id);
+        const dep = ms(t.gps_departed_at) ?? m?.origin?.departed ?? null, ret = ms(t.gps_returned_base_at) ?? m?.returnedBase ?? null;
+        const anchors: (number | null)[] = [dep]; const stops: U.TaskSpan["stops"] = [];
+        if (t.is_route) for (const s of (srows || []).filter((s: any) => s.task_id === t.id)) {
+          const sv = m?.stops.find((x) => x.stopId === s.id)?.visit;
+          const a = ms(s.gps_arrived_at) ?? sv?.arrived ?? null, d = ms(s.gps_departed_at) ?? sv?.departed ?? null;
+          anchors.push(a, d); stops.push({ id: s.id, seq: s.seq, t: a });
+        } else anchors.push(ms(t.gps_arrived_at) ?? m?.dest?.arrived ?? null, ms(t.gps_left_destination_at) ?? m?.dest?.departed ?? null);
+        const an = anchors.filter((x): x is number => x != null);
+        if (an.length) res.push({ taskId: t.id, kind: t.is_route ? "route" : "single", driverId: t.assigned_driver_id ?? null, start: dep ?? Math.min(...an), end: ret ?? ms(t.completed_at), anchors: an, stops });
+      }
+      return res;
+    };
+    const nameOf = (id: number | null) => id == null ? "(no driver — truck list)" : roster!.drivers.find((d) => Number(d.id) === id)?.name || `driver #${id}`;
+    const vName = (id: number) => vehicles.find((x) => x.id === Number(id))?.name || `truck #${id}`;
+    for (const r of rows as any[]) {
+      out.checked++;
+      const v = Number(r.vehicle_id), t = Date.parse(r.arrived_at), cal = A.ctDate(t);
+      const cur = r.driver_id != null ? Number(r.driver_id) : null;
+      const task = r.task_id != null ? live.find((x) => x.id === r.task_id) : null;
+      if (task && !task.combined_into_task_id && task.assigned_driver_id != null && Number(task.assigned_driver_id) === cur) continue;  // on its driver's task: keep
+      const sh = await shiftsAt(cal);
+      const who = A.whoHadTruck(v, t, sh, env.excludeDrivers);
+      let want: number | null = who?.driverId ?? null;
+      let date = who ? who.date : cal;
+      const at = U.attachStop(t, [...spansFor(v, cal), ...(date !== cal ? spansFor(v, date) : [])], []);
+      const atTask = at.taskId != null ? live.find((x) => x.id === at.taskId) : null;
+      if (atTask?.assigned_driver_id != null && !env.excludeDrivers.includes(Number(atTask.assigned_driver_id))) { want = Number(atTask.assigned_driver_id); date = atTask.work_date; }
+      if (want == null && cur != null && live.some((x) => x.work_date === cal && vehOf(x) === v && Number(x.assigned_driver_id) === cur)) continue; // driver with tasks on that truck that day
+      if (want === cur && date === r.work_date) continue;
+      const set: Record<string, any> = { driver_id: want, task_id: atTask ? at.taskId : null, after_stop_id: atTask ? at.afterStopId : null, work_date: date, updated_at: nowIso };
+      const rec = { id: r.id, truck: vName(v), arrived: A.ctClock(t), from: nameOf(cur), to: nameOf(want), work_date: date, task_id: set.task_id, why: atTask ? `on ${atTask.is_route ? "route" : "task"} #${atTask.id}` : who?.why ?? "nobody had this truck on shift then" };
+      out.moved.push(rec);
+      if (reportOnly) continue;
+      let q = db.from("unplanned_stops").update(set, { count: "exact" }).eq("id", r.id);
+      q = cur == null ? q.is("driver_id", null) : q.eq("driver_id", cur);   // only if nobody changed it meanwhile
+      const { error: ue } = await q;
+      if (ue) out.write_errors.push(`unplanned #${r.id}: ${ue.message}`);
     }
   }
 

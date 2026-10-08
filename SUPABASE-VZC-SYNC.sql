@@ -278,3 +278,72 @@ grant select on public.unplanned_stops to anon, authenticated;
 grant update (review_status, reviewed_at) on public.unplanned_stops to anon, authenticated;   -- dashboard can only Keep/Ignore
 grant select, insert, update on public.unplanned_stops to service_role;                     -- the updater
 grant select on public.saved_locations to service_role;                                      -- naming stops after saved customers
+
+-- v3.11.0 — automatic TRUCK ASSIGNMENT (additive: 2 columns + 1 trigger on driver_schedule, 1 new table, grants; no existing row is changed). Applied as migration "v311_truck_auto_assign" 2026-10-08.
+
+-- 1. How a driver_schedule truck was chosen.
+alter table public.driver_schedule add column if not exists vehicle_source text
+  check (vehicle_source in ('auto_gps','manual'));
+alter table public.driver_schedule add column if not exists auto_assigned_at timestamptz;
+comment on column public.driver_schedule.vehicle_source is 'v3.11.0: auto_gps = set by vzc-sync from a truck ignition; manual = picked or cleared by dispatch. NULL on rows that predate this.';
+
+-- 2. A truck change from the dashboard (which never sends vehicle_source) is a manual pick (clearing it too).
+--    The updater sends vehicle_source = auto_gps itself; it may only fill an empty, non-manual slot.
+create or replace function public.driver_schedule_vehicle_source()
+returns trigger language plpgsql set search_path = public as $fn$
+begin
+  if tg_op = 'INSERT' then
+    if new.vehicle_id is not null and new.vehicle_source is null then new.vehicle_source := 'manual'; end if;
+    if new.vehicle_source is distinct from 'auto_gps' then new.auto_assigned_at := null; end if;
+    return new;
+  end if;
+  if new.vehicle_source = 'auto_gps' and old.vehicle_source is distinct from 'auto_gps' then
+    if old.vehicle_id is not null or old.vehicle_source = 'manual' then
+      new.vehicle_id := old.vehicle_id; new.vehicle_source := old.vehicle_source; new.auto_assigned_at := old.auto_assigned_at;
+    end if;
+    return new;
+  end if;
+  if new.vehicle_id is distinct from old.vehicle_id and new.vehicle_source is not distinct from old.vehicle_source then
+    new.vehicle_source := 'manual';
+    new.auto_assigned_at := null;
+  end if;
+  return new;
+end
+$fn$;
+
+drop trigger if exists driver_schedule_vehicle_source_trg on public.driver_schedule;
+create trigger driver_schedule_vehicle_source_trg
+  before insert or update on public.driver_schedule
+  for each row execute function public.driver_schedule_vehicle_source();
+
+-- 3. One decision per truck per date: an auto-assignment, or a question for dispatch when 2+ drivers fit.
+create table if not exists public.vehicle_assignment_suggestions (
+  id                   bigint generated always as identity primary key,
+  work_date            date   not null,
+  vehicle_id           bigint not null references public.vehicles(id),
+  ignition_at          timestamptz,
+  candidate_driver_ids bigint[] not null default '{}',
+  status               text   not null default 'pending' check (status in ('pending','auto_assigned','accepted','dismissed')),
+  chosen_driver_id     bigint references public.drivers(id),
+  reason               text,
+  created_at           timestamptz not null default now(),
+  resolved_at          timestamptz,
+  constraint vehicle_assignment_suggestions_date_vehicle_key unique (work_date, vehicle_id)
+);
+comment on table public.vehicle_assignment_suggestions is 'v3.11.0: one row per truck per date. pending = dashboard asks who started it; auto_assigned = the only on-shift driver without a truck got it.';
+
+alter table public.vehicle_assignment_suggestions enable row level security;
+drop policy if exists "truck suggestions read" on public.vehicle_assignment_suggestions;
+create policy "truck suggestions read" on public.vehicle_assignment_suggestions for select to anon, authenticated using (true);
+drop policy if exists "truck suggestions resolve" on public.vehicle_assignment_suggestions;
+create policy "truck suggestions resolve" on public.vehicle_assignment_suggestions for update to anon, authenticated using (true) with check (true);
+
+revoke all on public.vehicle_assignment_suggestions from anon, authenticated;
+grant select on public.vehicle_assignment_suggestions to anon, authenticated;
+grant update (status, chosen_driver_id, resolved_at) on public.vehicle_assignment_suggestions to anon, authenticated;
+grant select, insert, update on public.vehicle_assignment_suggestions to service_role;
+
+-- 4. What the updater needs (this project's default privileges don't grant it).
+grant select on public.driver_shifts, public.driver_pretrips to service_role;
+grant insert (work_date, driver_id, status, start_time, end_time, note, vehicle_id, vehicle_source, auto_assigned_at) on public.driver_schedule to service_role;
+grant update (vehicle_id, vehicle_source, auto_assigned_at) on public.driver_schedule to service_role;
