@@ -446,6 +446,7 @@ window.SHIFT_exportTasksCsv=async function(){
       "Stop Engine Off (CT)":stamp(x.gps_engine_off_at),"Stop Engine On (CT)":stamp(x.gps_engine_on_at),"Stop Engine-Off Minutes":x.gps_engine_off_minutes??"","Stop Idle Minutes":x.gps_idle_minutes??"",
       "Stop Match Method":x.gps_match_method||"","Stop Match Distance (m)":x.gps_match_distance_m??""}));
   });
+  if(typeof window.SHIFT_unplannedCsv==="function"){try{out=await SHIFT_unplannedCsv(out,from,to,byId)}catch(e){return alert("Could not load unplanned stops: "+(e.message||e))}}
   SHIFT_csvDownload(`tasks_${from||"start"}_to_${to||"end"}.csv`,out);
 };
 

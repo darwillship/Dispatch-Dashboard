@@ -1,3 +1,16 @@
+SHIFT Dispatch v3.10.0 (2026-10-08): AUTOMATIC UNPLANNED STOPS.
+The Verizon updater (vzc-sync, every 3 min) now logs any stop where a truck sat with the engine OFF for 5+ minutes
+away from McCook base, the truck's overnight spot and every planned task/stop that day. Saved in public.unplanned_stops
+(name = saved location / built-in Darwill site within 250 m, else the Verizon address; arrived, engine off/on, left,
+idle and engine-off minutes, truck). Board:
+  - during a route  -> dashed amber row inside the route card, right after the stop it followed (time order)
+  - during a single task -> dashed block at the bottom of that card (the task is NOT turned into a route)
+  - otherwise -> "Unplanned activity" card in the driver column, or the truck list under the live fleet strip
+  - "✓ Keep" / "✕ Ignore" on each row; ignored rows hide behind "Show ignored (n)".
+Unplanned stops never block or count toward route completion. Tasks CSV gets "Unplanned" + "Unplanned Review"
+columns and one extra row per unplanned stop. Tune the threshold in supabase/functions/vzc-sync/unplanned.ts
+(UNPLANNED_MIN_OFF_MIN). Table SQL is at the end of SUPABASE-VZC-SYNC.sql.
+
 SHIFT Dispatch v3.9.1 (2026-10-08): live truck chip shows the date when the last Verizon report is not from today (CT),
 e.g. "⚫ Engine off since Wed 10/7, 11:45 AM" (same for "⚠ Moving · last GPS …"). Stale-flag logic unchanged.
 
