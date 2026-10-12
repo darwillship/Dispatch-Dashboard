@@ -337,7 +337,8 @@ function unassignedCard(){
   return `<section class="driver unassigned-card"><div class="driver-head"><div><span class="driver-name">Driver, no truck yet</span><div class="driver-availability">These tasks have a driver but no truck. Drag each onto a truck.</div></div><div class="driver-head-tools"><span class="count">${noTruck.length}</span></div></div>${rows}</section>`;
 }
 function messengersCard(){
-  let mt=tasks.filter(isMsg).filter(t=>!t.combined_into_task_id);
+  let md=(drivers||[]).filter(d=>d.is_messenger).map(d=>Number(d.id));
+  let mt=tasks.filter(t=>isMsg(t)||md.includes(Number(t.assigned_driver_id))).filter(t=>!t.combined_into_task_id);
   let active=mt.filter(t=>t.status!=="completed"),done=mt.filter(t=>t.status==="completed");
   let fold=done.length?`<details class="done-fold"><summary>✓ ${done.length} done today</summary>${done.map(taskCard).join("")}</details>`:"";
   return `<section class="driver messenger-card"><div class="driver-head"><div><span class="driver-name">Messengers</span><div class="driver-availability">No truck schedule · no GPS tracking · status set by hand</div></div><div class="driver-head-tools"><span class="count">${active.length}${done.length?"/"+mt.length:""}</span></div></div><div class="driver-routes" data-messenger="1" data-drop-messenger="1">${active.length?active.map(taskCard).join(""):'<div class="empty">Drop a task here (or use 🛵 Messenger on a card)</div>'}${fold}</div></section>`;
@@ -660,7 +661,9 @@ const css43=`
 .simple-board .task .task-actions{display:none!important}
 .simple-board .task .route-job,.simple-board .task .grip{display:none}
 .simple-board .task .route-card-head{display:flex;align-items:center;gap:6px}
-#drivers.drivers{display:grid!important;column-count:auto!important;grid-template-columns:repeat(auto-fill,minmax(270px,1fr))!important;gap:10px!important;align-items:start!important}
+#drivers.drivers{display:grid!important;column-count:auto!important;grid-template-columns:repeat(auto-fill,minmax(270px,1fr))!important;gap:0 10px!important;grid-auto-rows:2px;align-items:start!important}
+#drivers.drivers>*{margin-bottom:10px!important}
+.plan-msg{margin-top:6px}
 #drivers.drivers>.driver{min-width:0;margin:0!important;width:auto!important}
 #drivers .bottom-wide{grid-column:1/-1}
 .off-line{font-size:12.5px;color:#8fa6ba;font-weight:700;padding:6px 4px}
@@ -691,7 +694,7 @@ function truckLine(v){
 }
 const stopsOfDriver=(d)=>stopsAll().filter(u=>{let w=whoAt(u.vehicle_id,Date.parse(u.arrived_at));return w&&w.driverId===Number(d)});
 const stopsAll=()=>((typeof SHIFT_unplanned==="function"?SHIFT_unplanned():[])||[]).slice().sort((a,b)=>Date.parse(a.arrived_at)-Date.parse(b.arrived_at));
-function moreMenu(inner){return `<details class="more" onclick="event.stopPropagation()"><summary title="More">⋯</summary><div class="more-body">${inner}</div></details>`}
+function moreMenu(inner,key){return `<details class="more" ${key?`data-mk="${key}"`:""} onclick="event.stopPropagation()"><summary title="More">⋯</summary><div class="more-body">${inner}</div></details>`}
 function driverCard43(d){
   const id=Number(d.id),v=curTruck(id),now=Date.now();
   let mine=tasks.filter(t=>Number(t.assigned_driver_id)===id&&!isMsg(t)&&!t.combined_into_task_id);
@@ -711,15 +714,22 @@ function driverCard43(d){
   let hist=(done.length?`<details class="done-fold" ${fo("dd"+id)} ${tg("dd"+id)}><summary>✓ ${done.length} done today</summary>${done.sort((a,b)=>new Date(b.completed_at||0)-new Date(a.completed_at||0)).map(taskCard).join("")}</details>`:"")+
     (ups.length?`<details class="truck-stops" ${fo("ds"+id)} ${tg("ds"+id)}><summary>📍 ${ups.length} detected stop${ups.length>1?"s":""} · last ${esc(stopName(ups[ups.length-1]))} ${esc(clk(ups[ups.length-1].arrived_at))}</summary>${ups.map(stopRow).join("")}</details>`:"");
   menu.push(`<button type="button" class="mini" onclick="openDriverSchedule()">🗓 Driver Schedule</button>`);
-  return `<section class="driver dcard" data-driver-card="${id}"><div class="driver-head"><div style="min-width:0"><div class="dname">${esc(d.name)}</div><div class="dtruck" title="${esc(lb.addr||"")}">${truckLine(v)}</div></div>${moreMenu(menu.join(""))}</div><div class="driver-routes" data-dcard="${id}" data-drop-dcard="${id}">${active.length?active.map(taskCard).join(""):`<div class="empty">Drop a task here</div>`}</div>${hist?`<div class="card-hist">${hist}</div>`:""}</section>`;
+  return `<section class="driver dcard" data-driver-card="${id}"><div class="driver-head"><div style="min-width:0"><div class="dname">${esc(d.name)}</div><div class="dtruck" title="${esc(lb.addr||"")}">${truckLine(v)}</div></div>${moreMenu(menu.join(""),"d"+id)}</div><div class="driver-routes" data-dcard="${id}" data-drop-dcard="${id}">${active.length?active.map(taskCard).join(""):`<div class="empty">Drop a task here</div>`}</div>${hist?`<div class="card-hist">${hist}</div>`:""}</section>`;
 }
 function bottom43(onIds){
-  let off=(drivers||[]).filter(d=>d.active!==false&&!onIds.includes(Number(d.id))&&(typeof driverVisibleOnBoard!=="function"||driverVisibleOnBoard(d)));
+  let off=(drivers||[]).filter(d=>!msgDrv(d)&&d.active!==false&&!onIds.includes(Number(d.id))&&(typeof driverVisibleOnBoard!=="function"||driverVisibleOnBoard(d)));
   let offTxt=off.map(d=>{let sc=effectiveDriverSchedule(d.id);let st=sc&&sc.status&&sc.status!=="working"?sc.status.replace("_"," "):"off";return esc(d.name)+" ("+esc(st)+")"}).join(" · ");
   let unk=stopsAll().filter(u=>!whoAt(u.vehicle_id,Date.parse(u.arrived_at)));
   return (unk.length?`<details class="bottom-wide unk-line" ${(window.SHIFT_openFolds||{}).unk?"open":""} ontoggle="(window.SHIFT_openFolds=window.SHIFT_openFolds||{}).unk=this.open"><summary>📍 ${unk.length} detected stop${unk.length>1?"s":""} with Driver unknown (no driver clearly scheduled on that truck then)</summary>${unk.map(u=>`<div class="mrow" style="margin-top:6px;font-weight:900">🚛 ${esc(vName(u.vehicle_id))}</div>`+stopRow(u)).join("")}</details>`:"")+
     (off.length?`<div class="bottom-wide off-line">💤 Not working: ${offTxt}</div>`:"");
 }
+function masonry(){const g=$("drivers");if(!g)return;const items=[...g.children];items.forEach(el=>{el.style.gridRowEnd="auto"});
+  items.forEach(el=>{const h=el.getBoundingClientRect().height+10;el.style.gridRowEnd="span "+Math.max(1,Math.ceil(h/2))})}
+window.SHIFT_masonry=masonry;
+addEventListener("resize",()=>requestAnimationFrame(masonry));
+document.addEventListener("toggle",e=>{if(e.target.closest&&e.target.closest("#drivers")&&!e.target.classList.contains("more"))requestAnimationFrame(masonry)},true);
+if(window.ResizeObserver){const ro=new ResizeObserver(()=>requestAnimationFrame(masonry));setTimeout(()=>{const g=$("drivers");if(g)ro.observe(g)},0)}
+const msgDrv=d=>!!(d&&d.is_messenger);
 const render40=window.render;
 window.render=function(){
   SH=around(boardDate);
@@ -732,7 +742,7 @@ window.render=function(){
   document.body.classList.add("simple-board");
   let working=new Set(SH.filter(s=>s.date===boardDate&&s.working).map(s=>s.driverId));
   tasks.filter(t=>t.assigned_driver_id&&!isMsg(t)&&t.status!=="completed").forEach(t=>working.add(Number(t.assigned_driver_id)));
-  let ds=(drivers||[]).filter(d=>working.has(Number(d.id))&&(typeof driverVisibleOnBoard!=="function"||driverVisibleOnBoard(d)));
+  let ds=(drivers||[]).filter(d=>!msgDrv(d)&&working.has(Number(d.id))&&(typeof driverVisibleOnBoard!=="function"||driverVisibleOnBoard(d)));
   const startOf=d=>{let s=SH.filter(x=>x.driverId===Number(d.id)&&x.working&&x.date===boardDate&&x.start!=null).map(x=>x.start);return s.length?Math.min(...s):9e15};
   ds.sort((a,b)=>startOf(a)-startOf(b)||String(a.name).localeCompare(b.name));
   let ids=ds.map(d=>Number(d.id));
@@ -740,7 +750,10 @@ window.render=function(){
   $("drivers").innerHTML=`<div class="bottom-wide stat-line" id="statLine"></div>`+ds.map(driverCard43).join("")+bottom43(ids)+(mt.length||MSG.length?`<div class="bottom-wide">${messengersCard()}</div>`:"");
   try{updateMetrics()}catch(_){}
   bindDrag();
+  masonry();requestAnimationFrame(masonry);
+  if(window.SHIFT_openMenuKey){const d=document.querySelector(`details.more[data-mk="${window.SHIFT_openMenuKey}"]`);if(d){d.open=true}}
 };
+document.addEventListener("toggle",e=>{const d=e.target;if(d instanceof HTMLDetailsElement&&d.classList.contains("more")&&d.dataset.mk){if(d.open)window.SHIFT_openMenuKey=d.dataset.mk;else if(window.SHIFT_openMenuKey===d.dataset.mk&&d.isConnected)window.SHIFT_openMenuKey=null}},true);
 const um40=window.updateMetrics;
 window.updateMetrics=function(){
   try{um40()}catch(_){}
@@ -753,8 +766,10 @@ window.taskCard=function(t){
   let html=tc43.apply(this,arguments);
   try{let tp=document.createElement("template");tp.innerHTML=html;let card=tp.content.querySelector(".task");if(!card)return html;
     let acts=card.querySelector(".task-actions"),pick=card.querySelector(".task-driver-pick");
+    const freeT=!t.assigned_driver_id&&t.vehicle_id==null&&!isMsg(t)&&t.status!=="completed"&&!t.combined_into_task_id;
+    if(acts){const mb=[...acts.querySelectorAll("button")].find(b=>/Messenger/.test(b.textContent)&&!/Edit/.test(b.textContent));if(mb){mb.remove();if(freeT){mb.classList.add("plan-msg");(card.querySelector(".ready-toggle")||card.querySelector(".route-flags")||card.lastElementChild).insertAdjacentElement("afterend",mb)}}}
     let inner=(acts?acts.innerHTML:"")+(pick?pick.outerHTML:"");if(pick)pick.remove();
-    if(inner.trim()){let head=card.querySelector(".route-card-head")||card.firstElementChild;let m=document.createElement("template");m.innerHTML=`<details class="more tmore" onclick="event.stopPropagation()" ondragstart="event.stopPropagation()"><summary title="Edit, delete, messenger…">⋯</summary><div class="more-body">${inner}</div></details>`;head.appendChild(m.content)}
+    if(inner.trim()){let head=card.querySelector(".route-card-head")||card.firstElementChild;let m=document.createElement("template");m.innerHTML=`<details class="more tmore" data-mk="t${t.id}" onclick="event.stopPropagation()" ondragstart="event.stopPropagation()"><summary title="Edit, delete, messenger…">⋯</summary><div class="more-body">${inner}</div></details>`;head.appendChild(m.content)}
     return tp.innerHTML}catch(e){return html}
 };
 function placeMenu(d){const b=d.querySelector(":scope>.more-body"),sm=d.querySelector(":scope>summary");if(!b||!sm)return;
