@@ -1,3 +1,5 @@
+SHIFT Dispatch v4.3.1 (Oct 12, 2026): ⋯ menus are floating popovers (fixed, kept inside the window, close on outside click / Esc). Bottom Trucks bar removed; truck status (In Service / Out / Repair) is in Driver Schedule → Truck Schedule. Driver-unknown stops = one expandable line at the bottom (only when there are some). Driver cards show "✓ N done today" and "📍 N detected stops" folds again.
+
 SHIFT Dispatch v4.3.0 (Oct 12, 2026): simple board — one card per driver (big name + current truck with one dot: green moving / grey parked / red out of service). Everything else (address, live status, counts, shift, switch truck, truck pick, detected stops, done tasks) in the card ⋯ menu; task Edit/Delete/Messenger/driver in the task ⋯. Drop on a driver = driver + their current truck (moving -> In Progress). Bottom: Trucks line (trucks without driver / out of service, ⚙ status, Driver-unknown stops), Not working line, Messengers. Stats = one text line. No data/schema change.
 
 SHIFT Dispatch v4.2.1 (Oct 12, 2026): layout fix — Plan & Prepare 300px + truck cards in a wrapping grid (min 280px each); driver picker full-width on its own line; single column under 900px.

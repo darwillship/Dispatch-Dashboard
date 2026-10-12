@@ -428,7 +428,7 @@ window.SHIFT_saveSvc=async function(){
   if(st!=="in_service"&&open&&!confirm(`${vName(v)} still has ${open} open task(s). They stay on it until you move them. Continue?`))return;
   let r=await db.from("vehicle_status").upsert({vehicle_id:v,status:st,since:$("svcSince").value||(st!=="in_service"?ymd(new Date()):null),note:$("svcNote").value.trim()||null,updated_by:"dashboard",updated_at:new Date().toISOString()},{onConflict:"vehicle_id"});
   if(r.error)return alert("Could not save the truck status: "+r.error.message);
-  $("svcModal").classList.remove("show");await load();
+  $("svcModal").classList.remove("show");await load();try{let p=$("truckSchedulePanel");if(p&&p.style.display!=="none"){tseRead();tseRender()}}catch(_){}
 };
 /* ---------- v4.2.0: pick today's driver on a truck card = Daily Override (driver_schedule.vehicle_id) ---------- */
 window.SHIFT_pickTruckDriver=async function(v,val,sel){
@@ -570,6 +570,7 @@ function tsEditorHtml(){
     <label style="font-size:11px;display:flex;gap:3px;align-items:center" title="Inactive rows are kept but ignored"><input type="checkbox" class="tse-active" ${r.active!==false?"checked":""} style="width:auto">on</label>
     <button type="button" class="mini danger" onclick="SHIFT_tseRemove('${r._k}')" title="Remove this shift">✕</button></div>`).join("");
   return `<div class="muted" style="font-size:12px;margin-bottom:6px">Recurring shifts: driver, truck, working days, start and end (CT). A shift that ends after midnight belongs to its start day. Several drivers can share a truck on different shifts. Daily Overrides (coverage, absences, truck changes) still win for their date. Changing a schedule never moves tasks that already have a truck.</div>
+  <div style="margin:4px 0 12px;padding:8px 10px;border:1px solid #24405b;border-radius:10px"><div style="font-weight:900;font-size:12.5px;margin-bottom:6px">🚛 Truck status</div><div style="display:flex;flex-wrap:wrap;gap:6px">${vehicles().filter(v=>v.active!==false).map(v=>{let sv=svcOf(v.id);return `<button type="button" class="mini" onclick="SHIFT_openSvc(${v.id})" title="In Service / Out of Service / At Repair Shop">${sv?(sv.status==="repair_shop"?"🔧 ":"⛔ "):"🟢 "}${esc(v.name)} · ${esc(sv?SVC_L[sv.status]:"In Service")}</button>`}).join("")}</div></div>
   <div id="tseFlags"></div>${rows||'<div class="empty">No shifts yet.</div>'}
   <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button type="button" class="mini" onclick="SHIFT_tseAdd()">+ Add shift</button><button type="button" class="btn primary" onclick="SHIFT_tseSave()">Save Truck Schedule</button><span id="tseSaved" class="truck-saved"></span></div>`;
 }
@@ -650,10 +651,12 @@ const css43=`
 .dcard .driver-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .more{position:relative}.more>summary{list-style:none;cursor:pointer;font-weight:900;font-size:18px;line-height:1;padding:2px 8px;border-radius:8px;color:#9fb3c6}
 .more>summary::-webkit-details-marker{display:none}.more[open]>summary{background:rgba(127,150,170,.15)}
-.more-body{position:absolute;right:0;top:28px;z-index:50;width:min(340px,86vw);background:#0f1a26;border:1px solid #2b3d4f;border-radius:12px;padding:10px;box-shadow:0 12px 30px rgba(0,0,0,.45);font-size:12px;display:flex;flex-direction:column;gap:7px}
+.more-body{position:fixed;left:-9999px;top:0;z-index:10000;width:min(340px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;box-sizing:border-box;background:#0f1a26;border:1px solid #2b3d4f;border-radius:12px;padding:10px;box-shadow:0 12px 30px rgba(0,0,0,.45);font-size:12px;display:flex;flex-direction:column;gap:7px}
 .more-body .mrow{color:#9fb3c6;font-weight:700}.more-body button{align-self:flex-start}
 .task .tmore{margin-left:auto}.task .tmore>summary{font-size:16px;padding:0 6px}
-.task .tmore .more-body{width:auto;min-width:170px;flex-direction:row;flex-wrap:wrap;top:22px}
+.task .tmore .more-body{width:auto;min-width:190px;max-width:calc(100vw - 16px);flex-direction:row;flex-wrap:wrap}
+.dcard .card-hist{margin-top:6px;display:flex;flex-direction:column;gap:4px}
+.unk-line{font-size:12.5px;border:1px dashed #6b5a1f;border-radius:10px;padding:6px 10px;color:#e2b36b}.unk-line>summary{cursor:pointer;font-weight:800}
 .simple-board .task .task-actions{display:none!important}
 .simple-board .task .route-job,.simple-board .task .grip{display:none}
 .simple-board .task .route-card-head{display:flex;align-items:center;gap:6px}
@@ -704,28 +707,17 @@ function driverCard43(d){
   SWS.filter(w=>String(w.work_date).slice(0,10)===boardDate&&Number(w.driver_id)===id).forEach(w=>menu.push(`<div class="truck-switch-note"><span>⇄ Switched ${esc(vName(Number(w.from_vehicle_id)))} → ${esc(vName(Number(w.to_vehicle_id)))} at ${clk(w.switched_at)}</span><button type="button" class="mini" onclick="SHIFT_undoSwitch(${w.id})">Undo</button></div>`));
   if(isToday()&&v!=null)menu.push(`<button type="button" class="mini" onclick="SHIFT_openSwitch(${id},${v})">⇄ Switch truck now</button>`);
   menu.push(`<div class="mrow">🚛 Truck for ${isToday()?"today":esc(boardDate)}: <select onchange="SHIFT_pickTruckDriver(Number(this.value),'${id}',this)"><option value="">${v!=null?esc(vName(v)):"— pick —"}</option>${vehicles().filter(t=>t.active!==false&&Number(t.id)!==v&&!svcOf(t.id)).map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join("")}</select></div>`);
-  if(ups.length)menu.push(`<details class="truck-stops"><summary>📍 ${ups.length} detected stop${ups.length>1?"s":""}</summary>${ups.map(stopRow).join("")}</details>`);
-  if(done.length)menu.push(`<details class="done-fold"><summary>✓ ${done.length} done</summary>${done.map(taskCard).join("")}</details>`);
+  const fo=(k)=>(window.SHIFT_openFolds||{})[k]?"open":"",tg=(k)=>`ontoggle="(window.SHIFT_openFolds=window.SHIFT_openFolds||{})['${k}']=this.open"`;
+  let hist=(done.length?`<details class="done-fold" ${fo("dd"+id)} ${tg("dd"+id)}><summary>✓ ${done.length} done today</summary>${done.sort((a,b)=>new Date(b.completed_at||0)-new Date(a.completed_at||0)).map(taskCard).join("")}</details>`:"")+
+    (ups.length?`<details class="truck-stops" ${fo("ds"+id)} ${tg("ds"+id)}><summary>📍 ${ups.length} detected stop${ups.length>1?"s":""} · last ${esc(stopName(ups[ups.length-1]))} ${esc(clk(ups[ups.length-1].arrived_at))}</summary>${ups.map(stopRow).join("")}</details>`:"");
   menu.push(`<button type="button" class="mini" onclick="openDriverSchedule()">🗓 Driver Schedule</button>`);
-  return `<section class="driver dcard" data-driver-card="${id}"><div class="driver-head"><div style="min-width:0"><div class="dname">${esc(d.name)}</div><div class="dtruck" title="${esc(lb.addr||"")}">${truckLine(v)}</div></div>${moreMenu(menu.join(""))}</div><div class="driver-routes" data-dcard="${id}" data-drop-dcard="${id}">${active.length?active.map(taskCard).join(""):`<div class="empty">Drop a task here</div>`}</div></section>`;
+  return `<section class="driver dcard" data-driver-card="${id}"><div class="driver-head"><div style="min-width:0"><div class="dname">${esc(d.name)}</div><div class="dtruck" title="${esc(lb.addr||"")}">${truckLine(v)}</div></div>${moreMenu(menu.join(""))}</div><div class="driver-routes" data-dcard="${id}" data-drop-dcard="${id}">${active.length?active.map(taskCard).join(""):`<div class="empty">Drop a task here</div>`}</div>${hist?`<div class="card-hist">${hist}</div>`:""}</section>`;
 }
 function bottom43(onIds){
   let off=(drivers||[]).filter(d=>d.active!==false&&!onIds.includes(Number(d.id))&&(typeof driverVisibleOnBoard!=="function"||driverVisibleOnBoard(d)));
   let offTxt=off.map(d=>{let sc=effectiveDriverSchedule(d.id);let st=sc&&sc.status&&sc.status!=="working"?sc.status.replace("_"," "):"off";return esc(d.name)+" ("+esc(st)+")"}).join(" · ");
-  let used=new Set(onIds.map(curTruck).filter(x=>x!=null));
-  let vs=vehicles().filter(v=>v.active!==false).slice().sort((a,b)=>Number(a.id)-Number(b.id));
   let unk=stopsAll().filter(u=>!whoAt(u.vehicle_id,Date.parse(u.arrived_at)));
-  let chips=vs.filter(v=>!used.has(Number(v.id))||svcOf(v.id)).map(v=>{let vid=Number(v.id),sv=svcOf(vid);
-    let tt=tasks.filter(t=>!isMsg(t)&&!t.assigned_driver_id&&Number(t.vehicle_id)===vid&&t.status!=="completed");
-    let us=unk.filter(u=>Number(u.vehicle_id)===vid);
-    let m=[`<div class="mrow">${truckLine(vid)}</div>`];let lb=liveBits(vid);if(lb.addr)m.push(`<div class="mrow">📍 ${esc(lb.addr)}</div>`);
-    if(us.length)m.push(`<details class="truck-stops" open><summary>📍 ${us.length} stop${us.length>1?"s":""} · Driver unknown</summary>${us.map(stopRow).join("")}</details>`);
-    if(tt.length)m.push(`<div class="mrow">Tasks on this truck without a driver:</div>`+tt.map(taskCard).join(""));
-    return `<span class="tchip ${sv?"oos":""}" ${sv?"":`data-truck="${vid}" data-drop-truck="${vid}"`}>${truckLine(vid)}${us.length?`<span class="unk-stops" title="Stops with no driver clearly scheduled">· ${us.length} unknown-driver stop${us.length>1?"s":""}</span>`:""}${tt.length?`<span>· ${tt.length} task${tt.length>1?"s":""}</span>`:""}<button type="button" class="mini" onclick="SHIFT_openSvc(${vid})" title="In Service / Out of Service / At Repair Shop">⚙</button>${moreMenu(m.join(""))}</span>`}).join("");
-  // unknown-driver stops on trucks that do have a driver now
-  let unkUsed=unk.filter(u=>used.has(Number(u.vehicle_id))&&!svcOf(u.vehicle_id));
-  let unkHtml=unkUsed.length?`<span class="tchip">${moreMenu(`<details class="truck-stops" open><summary>📍 ${unkUsed.length} stop${unkUsed.length>1?"s":""} · Driver unknown</summary>${unkUsed.map(u=>`<div class="mrow">${esc(vName(u.vehicle_id))}</div>`+stopRow(u)).join("")}</details>`)}<span class="unk-stops">${unkUsed.length} Driver-unknown stop${unkUsed.length>1?"s":""} on driven trucks</span></span>`:"";
-  return `<div class="bottom-wide trucks-line"><span class="tl-title">🚛 Trucks</span>${chips||'<span class="muted">All trucks have a driver.</span>'}${unkHtml}<button class="mini" type="button" onclick="openDriverSchedule();setTimeout(()=>SHIFT_showTruckTab&&SHIFT_showTruckTab(),60)">Truck Schedule</button></div>`+
+  return (unk.length?`<details class="bottom-wide unk-line" ${(window.SHIFT_openFolds||{}).unk?"open":""} ontoggle="(window.SHIFT_openFolds=window.SHIFT_openFolds||{}).unk=this.open"><summary>📍 ${unk.length} detected stop${unk.length>1?"s":""} with Driver unknown (no driver clearly scheduled on that truck then)</summary>${unk.map(u=>`<div class="mrow" style="margin-top:6px;font-weight:900">🚛 ${esc(vName(u.vehicle_id))}</div>`+stopRow(u)).join("")}</details>`:"")+
     (off.length?`<div class="bottom-wide off-line">💤 Not working: ${offTxt}</div>`:"");
 }
 const render40=window.render;
@@ -765,6 +757,13 @@ window.taskCard=function(t){
     if(inner.trim()){let head=card.querySelector(".route-card-head")||card.firstElementChild;let m=document.createElement("template");m.innerHTML=`<details class="more tmore" onclick="event.stopPropagation()" ondragstart="event.stopPropagation()"><summary title="Edit, delete, messenger…">⋯</summary><div class="more-body">${inner}</div></details>`;head.appendChild(m.content)}
     return tp.innerHTML}catch(e){return html}
 };
+function placeMenu(d){const b=d.querySelector(":scope>.more-body"),sm=d.querySelector(":scope>summary");if(!b||!sm)return;
+  const r=sm.getBoundingClientRect(),W=innerWidth,H=innerHeight;b.style.left="0px";b.style.top="0px";const bw=b.offsetWidth,bh=b.offsetHeight;
+  let x=Math.min(Math.max(8,r.right-bw),W-bw-8),y=r.bottom+4;if(y+bh>H-8)y=Math.max(8,r.top-bh-4);if(y+bh>H-8)y=8;b.style.left=x+"px";b.style.top=y+"px"}
+document.addEventListener("toggle",e=>{const d=e.target;if(!(d instanceof HTMLDetailsElement)||!d.classList.contains("more"))return;if(d.open){document.querySelectorAll("details.more[open]").forEach(o=>{if(o!==d&&!o.contains(d))o.open=false});placeMenu(d)}},true);
+addEventListener("resize",()=>document.querySelectorAll("details.more[open]").forEach(placeMenu));
+addEventListener("scroll",()=>document.querySelectorAll("details.more[open]").forEach(placeMenu),true);
+document.addEventListener("keydown",e=>{if(e.key==="Escape")document.querySelectorAll("details.more[open]").forEach(d=>d.open=false)});
 document.addEventListener("click",e=>{document.querySelectorAll("details.more[open]").forEach(d=>{if(!d.contains(e.target))d.open=false})});
 const bd43=window.bindDrag;
 window.bindDrag=function(){bd43();document.querySelectorAll(".tchip[data-truck]").forEach(z=>{z.ondragover=e=>{e.preventDefault();z.classList.add("over")};z.ondragleave=()=>z.classList.remove("over");z.ondrop=async e=>{e.preventDefault();z.classList.remove("over");if(dragId)await dropOn(z,dragId,null)}})};
