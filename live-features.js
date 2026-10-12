@@ -71,6 +71,7 @@ function liveInfo(vid,now){
   return {cls,text,tip:tip.join("\n"),address:x.address||""};
 }
 window.SHIFT_liveInfo=liveInfo;
+window.SHIFT_liveRow=v=>LIVE.get(Number(v))||null;
 window.SHIFT_liveChip=function(vid){let i=liveInfo(vid);return `<span class="live-chip ${i.cls}" title="${esc(i.tip)}">${esc(i.text)}</span>`};
 
 /* driver card: append the live chip to the resolved truck badge */

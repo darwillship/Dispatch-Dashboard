@@ -558,3 +558,19 @@ grant execute on function public.vzc_auto_status(bigint,text,timestamptz) to ser
 
 grant select, insert, update, delete on public.truck_schedules, public.messengers, public.named_places to service_role;
 grant usage, select on sequence public.truck_schedules_id_seq, public.messengers_id_seq, public.named_places_id_seq to service_role;
+
+-- ===== v4.1.0 (Oct 12, 2026): mid-day truck switches (additive) =====
+create table if not exists public.truck_switches(
+ id bigserial primary key, work_date date not null, driver_id bigint not null references public.drivers(id),
+ from_vehicle_id bigint references public.vehicles(id), to_vehicle_id bigint not null references public.vehicles(id),
+ switched_at timestamptz not null, moved_task_ids bigint[] not null default '{}', note text,
+ active boolean not null default true, created_by text, created_at timestamptz not null default now());
+create index if not exists truck_switches_date_idx on public.truck_switches(work_date,driver_id);
+alter table public.truck_switches enable row level security;
+create policy truck_switches_read on public.truck_switches for select to anon,authenticated using (true);
+create policy truck_switches_insert on public.truck_switches for insert to anon,authenticated with check (true);
+create policy truck_switches_update on public.truck_switches for update to anon,authenticated using (true) with check (true);
+grant select,insert,update on public.truck_switches to anon,authenticated;
+grant usage,select on sequence public.truck_switches_id_seq to anon,authenticated;
+grant select,insert,update,delete on public.truck_switches to service_role;
+grant usage,select on sequence public.truck_switches_id_seq to service_role;

@@ -1,3 +1,10 @@
+SHIFT Dispatch v4.1.0 (Oct 12, 2026) — board cleanup
+- Messenger button only on tasks still in Plan & Prepare / Ready to Assign (no driver, no truck).
+- Driver names on truck cards bigger and bolder; the one on shift now is largest (green).
+- Drag a task onto a truck that is driving right now (Verizon: Moving, report <= 10 min old, board on today) -> it goes straight to In Progress.
+- Declutter: "Unassigned & drivers" replaced by a one-line "Today's crew" strip (availability dropdown kept; drop a task on a name to give it to that driver without a truck). A "Driver, no truck yet" card shows only when such tasks exist. Detected stops fold into one line per truck (tap to open). Zero counters hidden.
+- Truck switch: "⇄ Switch truck" on the on-shift driver chip. Pick new truck + time; open tasks move; completed tasks and stops stay. Both cards show "switched at HH:MM"; Undo on the new card. Saved in public.truck_switches (never deleted; Undo sets active=false). vzc-sync splits the shift at the switch time; overlap with another scheduled driver shows a warning (not blocked) and stops in the overlap are Driver unknown.
+
 SHIFT Dispatch v4.0.1 (Oct 12, 2026): a task without a time now shows "No time set" (grey) instead of an orange "ASAP" that looked like a priority. Priority was always saved correctly; the HIGH badge is the only urgency marker. Quick paste still turns the word ASAP/urgent/rush into High priority.
 
 SHIFT Dispatch v4.0.0 (Oct 12, 2026)

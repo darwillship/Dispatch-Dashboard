@@ -163,28 +163,30 @@ export async function runSync(env: Env, opt: SyncOptions) {
   const base = M.makePlace("Darwill McCook", M.BASE_ADDRESS, null)!;
 
   // driver roster + schedules (v3.11.0): who had which truck when (shift times, overnight shifts, daily picks, defaults)
-  let roster: { drivers: A.DriverRow[]; weekly: A.WeeklyRow[]; sched: A.SchedRow[]; truck: A.TruckSchedRow[] | null } | null = null;
+  let roster: { drivers: A.DriverRow[]; weekly: A.WeeklyRow[]; sched: A.SchedRow[]; truck: A.TruckSchedRow[] | null; switches: A.SwitchRow[] } | null = null;
   async function loadRoster(fresh = false) {
     if (roster && !fresh) return roster;
     const lo = addDays(dates[0] < today ? dates[0] : today, -2), hi = addDays(today, 1);
-    const [d, w, s, ts] = await Promise.all([
+    const [d, w, s, ts, sw] = await Promise.all([
       db.from("drivers").select("id,name,active,default_vehicle_id").order("id"),
       db.from("driver_weekly_schedule").select("driver_id,day_of_week,working,start_time,end_time"),
       db.from("driver_schedule").select("*").gte("work_date", lo).lte("work_date", hi),
       db.from("truck_schedules").select("id,driver_id,vehicle_id,days,start_time,end_time,active"),
+      db.from("truck_switches").select("id,work_date,driver_id,from_vehicle_id,to_vehicle_id,switched_at,active").eq("active", true).gte("work_date", lo).lte("work_date", hi),
     ]);
+    if (sw.error) warnings.push("read truck_switches (v4.1.0 migration missing? no mid-day switches): " + sw.error.message);
     if (ts.error) { warnings.push("read truck_schedules (v4.0.0 migration missing? using v3.11 rules): " + ts.error.message); summary.schedule_model = "v3.11 (weekly + default truck)"; }
     else summary.schedule_model = "v4.0.0 truck_schedules (strict, no grace)";
     if (d.error) throw new Error("read drivers: " + d.error.message);
     if (w.error) warnings.push("read driver_weekly_schedule: " + w.error.message);
     if (s.error) warnings.push("read driver_schedule: " + s.error.message);
-    roster = { drivers: (d.data || []) as any, weekly: (w.data || []) as any, sched: (s.data || []) as any, truck: ts.error ? null : (ts.data || []) as any };
+    roster = { drivers: (d.data || []) as any, weekly: (w.data || []) as any, sched: (s.data || []) as any, truck: ts.error ? null : (ts.data || []) as any, switches: sw.error ? [] : (sw.data || []) as any };
     return roster;
   }
   /** shifts of `date` and the day before (overnight shifts own their after-midnight time) */
   async function shiftsAround(date: string, fresh = false): Promise<A.Shift[]> {
     const r = await loadRoster(fresh);
-    const out = [...A.shiftsFor(addDays(date, -1), r.drivers, r.sched, r.weekly, r.truck), ...A.shiftsFor(date, r.drivers, r.sched, r.weekly, r.truck)];
+    const out = [...A.applySwitches(addDays(date, -1), A.shiftsFor(addDays(date, -1), r.drivers, r.sched, r.weekly, r.truck), r.switches), ...A.applySwitches(date, A.shiftsFor(date, r.drivers, r.sched, r.weekly, r.truck), r.switches)];
     if (opt.dryRun && opt.assignSim?.ignoreTrucksOf.length) for (const s of out) if (opt.assignSim.ignoreTrucksOf.includes(s.driverId)) { s.vehicleId = null; s.vehicleSource = null; s.auto = false; }
     return out;
   }
