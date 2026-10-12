@@ -1,3 +1,27 @@
+SHIFT Dispatch v4.0.0 (Oct 12, 2026)
+====================================
+Board = one card per truck (7 Verizon trucks): tasks, live Verizon status + location, the drivers scheduled on it
+(green dot = on shift now), overlap warnings, and the day's automatically detected stops (separate; never count toward
+completion). The horizontal Trucks strip, Keep / Ignore, "to review", "Show ignored" and the "Who started this truck?"
+prompt are gone (review_status data is kept; previously ignored stops still show, marked "marked ignored earlier").
+- Drag a task onto a truck -> dispatch_tasks.vehicle_id + assigned_driver_id (the driver scheduled on that truck;
+  change it with the 👤 picker on the card). Tasks keep their stored truck; schedule changes never move them.
+- "Unassigned & drivers": drivers on the board today (availability select), tasks with a driver but no truck.
+- 🛵 Messenger on any card -> Assign to Messenger dialog (saved or new messenger, optional confirmation number and
+  cost). Messenger tasks live in "Messengers": no truck, no GPS tracking, status set by hand (Assigned → In Progress → Completed).
+- Driver Schedule → 🚛 Truck Schedule (new first tab): recurring shifts = driver + truck + weekdays + start/end (CT).
+  Overnight shifts belong to their start day. Overlaps and gaps are flagged. Daily Overrides still win for their date
+  (an override truck counts only if picked by a person; v3.11 "auto" picks are shown as "auto · not used").
+  "Weekly Hours" (old Weekly Schedule) still feeds the Driver App.
+- Detected stop -> ✎ Edit location name: saved team-wide in named_places (70 m radius, nearest place wins). Verizon
+  address and times are kept on the stop.
+- Driver of a stop = the ONE driver clearly scheduled on that truck at that moment (no 1-hour grace). Otherwise "Driver unknown".
+- CSV: new columns Truck, Messenger, Confirmation Number, Messenger Cost.
+Database (migration v400, additive): tables truck_schedules, messengers, named_places; dispatch_tasks.vehicle_id,
+messenger_id, confirmation_number, messenger_cost; unplanned_stops.named_place_id. vzc_auto_status refuses messenger tasks.
+GPS updater vzc-sync v10: strict schedule driver resolution, auto truck assignment retired, prefers the task's
+vehicle_id, skips messenger tasks, names stops from named_places, never overwrites a stored stop driver.
+
 SHIFT Dispatch v3.12.0 (2026-10-08): GPS TIMES BELONG TO THE RIGHT TASK + AUTO STATUS + TIME OPTIONAL.
 - Matching rule (vzc-sync v9): a task/stop only takes truck movement that starts at or after
   min(created_at - 10 min, scheduled time). A task typed in after the fact (no time, or a time at/before the visit) may take

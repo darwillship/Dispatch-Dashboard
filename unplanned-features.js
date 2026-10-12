@@ -192,7 +192,7 @@ window.SHIFT_unplannedCsv=async function(out,from,to,byId){
     let t=u.task_id!=null?byId[u.task_id]:null,base=t?out.find(o=>Number(o["Task ID"])===Number(u.task_id)):null;
     if(base)for(let c of cols)if(!STOPK.has(c))row[c]=base[c];
     Object.assign(row,{"Work Date":u.work_date,"Driver":dName(u.driver_id)||(base?base.Driver:""),"Is Route":t&&t.is_route?"yes":"","Route Stop #":"","Stop Type":"unplanned",
-      "Stop Location":u.location_name||"","Stop Address":u.address||"","Stop Status":u.review_status,"Stop Arrived (CT)":stamp(u.arrived_at),"Stop Departed (CT)":stamp(u.departed_at),
+      "Stop Location":((window.SHIFT_placeFor&&SHIFT_placeFor(u))||{}).name||u.location_name||"","Stop Address":u.address||"","Stop Status":u.review_status,"Stop Arrived (CT)":stamp(u.arrived_at),"Stop Departed (CT)":stamp(u.departed_at),
       "Stop On-Site Minutes":mins(u.arrived_at,u.departed_at)??"","Stop GPS Truck":vName(u.vehicle_id),"Stop Engine Off (CT)":stamp(u.engine_off_at),"Stop Engine On (CT)":stamp(u.engine_on_at),
       "Stop Engine-Off Minutes":u.engine_off_minutes??"","Stop Idle Minutes":u.idle_minutes??"","Stop Match Method":u.source||"vzc_auto","Unplanned":"yes","Unplanned Review":u.review_status});
     row["Task ID"]=base?u.task_id:"";

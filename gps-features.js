@@ -138,6 +138,7 @@ window.SHIFT_taskCsvRows=function(from,to){
     .sort((a,b)=>String(taskDate(a)).localeCompare(String(taskDate(b)))||Number(a.assigned_driver_id||0)-Number(b.assigned_driver_id||0)||Number(a.sort_order||0)-Number(b.sort_order||0))
     .map(t=>{let d=(drivers||[]).find(x=>Number(x.id)===Number(t.assigned_driver_id));
       return Object.assign({"Task ID":t.id,"Work Date":taskDate(t)||"",Type:t.task_type||"",Status:t.status||"","Status Source":t.status_source==="auto_gps"?"auto (GPS)":t.status_source||"",Stage:t.planning_stage||"",Priority:t.priority||"",Driver:d?d.name:"",
+        /* v4.0.0 */"Truck":t.vehicle_id!=null?(((window.SHIFT_vehicles||[]).find(v=>Number(v.id)===Number(t.vehicle_id))||{}).name||("Vehicle #"+t.vehicle_id)):"","Messenger":t.messenger_id!=null?(m=>m?m.company+(m.contact_name?" ("+m.contact_name+")":""):"Messenger #"+t.messenger_id)(((window.SHIFT_v4&&SHIFT_v4.messengers)||[]).find(x=>Number(x.id)===Number(t.messenger_id))):"","Confirmation Number":t.confirmation_number||"","Messenger Cost":t.messenger_cost!=null?Number(t.messenger_cost).toFixed(2):"",
         Pickup:t.pickup_name||"","Pickup Address":t.pickup_address||"",Delivery:t.delivery_name||"","Delivery Address":t.delivery_address||"","Job / Client":t.job_client||"",Material:t.material||"",Pallets:t.pallet_qty??"",
         "Scheduled (CT)":t.scheduled_at?ctStamp(t.scheduled_at):"ASAP","Completed (CT)":ctStamp(t.completed_at)},SHIFT_gpsCsvFields(t),{Instructions:t.instructions||""},SHIFT_gpsDetailCsvFields(t))});
 };
