@@ -367,6 +367,7 @@ window.bindDrag=function(){
 };
 async function dropOn(z,id,before){
   if(z.dataset&&z.dataset.oos){let sv=svcOf(Number(z.dataset.oos));return alert(`${vName(Number(z.dataset.oos))} is ${sv?SVC_L[sv.status]:"out of service"} — it can't take tasks. Set it back to In Service with ⚙ first.`)}
+  if(z.dataset.dcard){let d=Number(z.dataset.dcard),v=curTruck(d);if(v!=null&&!svcOf(v))return moveTruck(id,v,before,d);let t=tasks.find(x=>x.id===id);if(t&&(t.vehicle_id!=null||isMsg(t))){let r=await db.from("dispatch_tasks").update({vehicle_id:null,messenger_id:null}).eq("id",id);if(r.error)return alert("Could not move: "+r.error.message)}return moveDriver(id,d,before)}
   if(z.dataset.truck)return moveTruck(id,Number(z.dataset.truck),before);
   if(z.dataset.messenger)return SHIFT_openMessenger(id);
   if(z.dataset.driver){let t=tasks.find(x=>x.id===id);if(t&&(t.vehicle_id!=null||isMsg(t))){let r=await db.from("dispatch_tasks").update({vehicle_id:null,messenger_id:null}).eq("id",id);if(r.error)return alert("Could not move: "+r.error.message)}return moveDriver(id,Number(z.dataset.driver),before)}
@@ -392,10 +393,10 @@ function truckMovingNow(v){
   let rep=x.reported_at?Date.parse(x.reported_at):NaN;return Number.isFinite(rep)&&Date.now()-rep<=MOVING_FRESH_MS;
 }
 window.SHIFT_truckMovingNow=truckMovingNow;
-async function moveTruck(id,v,before){
+async function moveTruck(id,v,before,forceDrv){
   let t=tasks.find(x=>x.id===id);if(!t)return;
   const goLive=truckMovingNow(v)&&t.status!=="completed";
-  let was=Number(t.assigned_driver_id||0),drv=driverForTruck(t,v);
+  let was=Number(t.assigned_driver_id||0),drv=forceDrv!=null?forceDrv:driverForTruck(t,v);
   let list=tasks.filter(x=>x.id!==id&&taskTruck(x)===v&&!isMsg(x)&&x.status!=="completed").sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
   let idx=before?list.findIndex(x=>x.id===before):list.length;if(idx<0)idx=list.length;list.splice(idx,0,t);
   for(let i=0;i<list.length;i++){
@@ -493,11 +494,11 @@ window.SHIFT_undoSwitch=async function(id){
 document.addEventListener("touchend",async e=>{
   if(typeof touchDrag==="undefined"||!touchDrag||!touchDrag.active)return;
   const t=e.changedTouches&&e.changedTouches[0];let z=t&&document.elementFromPoint(t.clientX,t.clientY);
-  let zz=z&&z.closest("[data-drop-truck],[data-drop-messenger]");if(!zz)return;
+  let zz=z&&z.closest("[data-drop-dcard],[data-drop-truck],[data-drop-messenger]");if(!zz)return;
   e.stopImmediatePropagation();
   const id=touchDrag.id,before=z.closest(".task[data-id]")?Number(z.closest(".task[data-id]").dataset.id):null;
   if(touchDrag.ghost)touchDrag.ghost.remove();try{tdClear()}catch(_){}touchDrag=null;
-  try{await dropOn({dataset:{truck:zz.dataset.dropTruck,messenger:zz.dataset.dropMessenger}},id,before)}catch(err){console.error(err);alert("Could not move the task. Please try again.")}
+  try{await dropOn({dataset:{dcard:zz.dataset.dropDcard,truck:zz.dataset.dropTruck,messenger:zz.dataset.dropMessenger}},id,before)}catch(err){console.error(err);alert("Could not move the task. Please try again.")}
 },{capture:true,passive:true});
 
 /* ---------- Assign to Messenger ---------- */
@@ -635,6 +636,138 @@ if(typeof window.SHIFT_defaultTruckSelect==="function")window.SHIFT_defaultTruck
   let rows=TS.filter(x=>Number(x.driver_id)===Number(d.id)&&x.active!==false),names=[...new Set(rows.map(x=>x.vehicle_id).filter(x=>x!=null))].map(vName);
   return `<span class="truck-pick" title="Trucks are set in Driver Schedule → Truck Schedule (v4.0.0)">🚛 ${esc(names.length?names.join(" / "):"no truck")} <button type="button" class="mini" onclick="SHIFT_showTruckTab()">Truck Schedule</button></span>`;
 };
+
+/* ================= v4.3.0: simple board — one card per driver ================= */
+const css43=`
+.board{grid-template-columns:300px minmax(0,1fr)!important}
+#metrics{display:none!important}
+.stat-line{font-size:13px;font-weight:800;color:#9fb3c6;margin:0 0 8px;padding:2px 2px}
+.stat-line b{color:#e8f0f7;font-weight:900}
+.dcard .dname{font-size:19px;font-weight:950;letter-spacing:.2px;line-height:1.15}
+.dcard .dtruck{font-size:13px;font-weight:800;color:#b9c9d8;margin-top:3px;display:flex;align-items:center;gap:6px}
+.sdot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:0 0 auto;background:#7e8b97}
+.sdot.moving{background:#2fd47a;box-shadow:0 0 0 3px rgba(47,212,122,.18)}.sdot.oos{background:#ff5a5a}
+.dcard .driver-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.more{position:relative}.more>summary{list-style:none;cursor:pointer;font-weight:900;font-size:18px;line-height:1;padding:2px 8px;border-radius:8px;color:#9fb3c6}
+.more>summary::-webkit-details-marker{display:none}.more[open]>summary{background:rgba(127,150,170,.15)}
+.more-body{position:absolute;right:0;top:28px;z-index:50;width:min(340px,86vw);background:#0f1a26;border:1px solid #2b3d4f;border-radius:12px;padding:10px;box-shadow:0 12px 30px rgba(0,0,0,.45);font-size:12px;display:flex;flex-direction:column;gap:7px}
+.more-body .mrow{color:#9fb3c6;font-weight:700}.more-body button{align-self:flex-start}
+.task .tmore{margin-left:auto}.task .tmore>summary{font-size:16px;padding:0 6px}
+.task .tmore .more-body{width:auto;min-width:170px;flex-direction:row;flex-wrap:wrap;top:22px}
+.simple-board .task .task-actions{display:none!important}
+.simple-board .task .route-job,.simple-board .task .grip{display:none}
+.simple-board .task .route-card-head{display:flex;align-items:center;gap:6px}
+#drivers.drivers{display:grid!important;column-count:auto!important;grid-template-columns:repeat(auto-fill,minmax(270px,1fr))!important;gap:10px!important;align-items:start!important}
+#drivers.drivers>.driver{min-width:0;margin:0!important;width:auto!important}
+#drivers .bottom-wide{grid-column:1/-1}
+.off-line{font-size:12.5px;color:#8fa6ba;font-weight:700;padding:6px 4px}
+.trucks-line{border:1px solid #24405b;border-radius:12px;padding:8px 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12.5px}
+.trucks-line .tl-title{font-weight:900;color:#9fb3c6;margin-right:4px}
+.tchip{display:inline-flex;align-items:center;gap:6px;border:1px solid #2b3d4f;border-radius:10px;padding:3px 4px 3px 9px;font-weight:800;background:#111d2a}
+.tchip.oos{opacity:.7}.tchip .mini{padding:1px 6px;font-size:11px}
+.unk-stops{font-size:12px;color:#e2b36b;font-weight:800}
+body.light-mode .more-body{background:#fff!important;border-color:#c9d8e6!important}body.light-mode .tchip{background:#fff!important;border-color:#c9d8e6!important}
+body.light-mode .dcard .dtruck{color:#3a5164!important}body.light-mode .stat-line b{color:#0d1824!important}
+@media(max-width:900px){.board{grid-template-columns:1fr!important}.board>.drivers-lane{grid-column:1!important}}
+@media(max-width:700px){#drivers.drivers{grid-template-columns:1fr!important}}`;
+{const e=document.createElement("style");e.textContent=css43;document.head.appendChild(e)}
+/* current truck of a driver for the board date: shift covering now (today), else their single truck that day */
+function curTruck(d){
+  d=Number(d);const mine=SH.filter(s=>s.driverId===d&&s.working&&s.date===boardDate);
+  if(isToday()){const now=Date.now();const hit=mine.filter(s=>s.start!=null&&now>=s.start&&now<s.end).map(s=>truckOf(s,SH)).filter(x=>x!=null);if(hit.length)return hit[hit.length-1]}
+  const vs=[...new Set(mine.map(s=>truckOf(s,SH)).filter(x=>x!=null))];return vs.length?vs[vs.length-1]:null;
+}
+window.SHIFT_curTruck=curTruck;
+function liveRow(v){return typeof SHIFT_liveRow==="function"?SHIFT_liveRow(v):null}
+function truckLine(v){
+  if(v==null)return `<span class="sdot"></span><span>No truck today</span>`;
+  const sv=svcOf(v);if(sv)return `<span class="sdot oos"></span><span>${esc(vName(v))} · ${esc(SVC_L[sv.status])}</span>`;
+  const x=liveRow(v),mv=truckMovingNow(v);
+  let st=!x?"no GPS yet":mv?`Moving${x.speed_mph!=null?" "+Math.round(x.speed_mph)+" mph":""}`:x.state==="Moving"?"GPS stale":x.state==="Idle"?"Parked (idling)":"Parked";
+  return `<span class="sdot ${mv?"moving":""}"></span><span>${esc(vName(v))} · ${esc(st)}</span>`;
+}
+const stopsOfDriver=(d)=>stopsAll().filter(u=>{let w=whoAt(u.vehicle_id,Date.parse(u.arrived_at));return w&&w.driverId===Number(d)});
+const stopsAll=()=>((typeof SHIFT_unplanned==="function"?SHIFT_unplanned():[])||[]).slice().sort((a,b)=>Date.parse(a.arrived_at)-Date.parse(b.arrived_at));
+function moreMenu(inner){return `<details class="more" onclick="event.stopPropagation()"><summary title="More">⋯</summary><div class="more-body">${inner}</div></details>`}
+function driverCard43(d){
+  const id=Number(d.id),v=curTruck(id),now=Date.now();
+  let mine=tasks.filter(t=>Number(t.assigned_driver_id)===id&&!isMsg(t)&&!t.combined_into_task_id);
+  let active=mine.filter(t=>t.status!=="completed").sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)),done=mine.filter(t=>t.status==="completed");
+  let x=v!=null?liveRow(v):null,lb=v!=null?liveBits(v):{chip:"",addr:""};
+  let sh=SH.filter(s=>s.driverId===id&&s.working&&s.date===boardDate&&s.start!=null&&!s.noTimes);
+  let ups=stopsOfDriver(id);
+  let menu=[];
+  if(sh.length)menu.push(`<div class="mrow">🕒 Shift: ${sh.map(s=>`${clk(s.start)}–${clk(s.end)}${truckOf(s,SH)!=null?" ("+esc(vName(truckOf(s,SH)))+")":""}`).join(", ")}</div>`);
+  if(v!=null){menu.push(`<div class="mrow">${lb.chip}</div>`);if(lb.addr)menu.push(`<div class="mrow">📍 ${esc(lb.addr)}</div>`)}
+  let nP=active.filter(t=>t.status==="in_progress").length;menu.push(`<div class="mrow">${active.length} open · ${nP} in progress · ${done.length} done</div>`);
+  let cf=conflicts(boardDate,SH).filter(c=>c.d.includes(id));cf.forEach(c=>menu.push(`<div class="truck-conflict">⚠ ${esc(c.text)}</div>`));
+  SWS.filter(w=>String(w.work_date).slice(0,10)===boardDate&&Number(w.driver_id)===id).forEach(w=>menu.push(`<div class="truck-switch-note"><span>⇄ Switched ${esc(vName(Number(w.from_vehicle_id)))} → ${esc(vName(Number(w.to_vehicle_id)))} at ${clk(w.switched_at)}</span><button type="button" class="mini" onclick="SHIFT_undoSwitch(${w.id})">Undo</button></div>`));
+  if(isToday()&&v!=null)menu.push(`<button type="button" class="mini" onclick="SHIFT_openSwitch(${id},${v})">⇄ Switch truck now</button>`);
+  menu.push(`<div class="mrow">🚛 Truck for ${isToday()?"today":esc(boardDate)}: <select onchange="SHIFT_pickTruckDriver(Number(this.value),'${id}',this)"><option value="">${v!=null?esc(vName(v)):"— pick —"}</option>${vehicles().filter(t=>t.active!==false&&Number(t.id)!==v&&!svcOf(t.id)).map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join("")}</select></div>`);
+  if(ups.length)menu.push(`<details class="truck-stops"><summary>📍 ${ups.length} detected stop${ups.length>1?"s":""}</summary>${ups.map(stopRow).join("")}</details>`);
+  if(done.length)menu.push(`<details class="done-fold"><summary>✓ ${done.length} done</summary>${done.map(taskCard).join("")}</details>`);
+  menu.push(`<button type="button" class="mini" onclick="openDriverSchedule()">🗓 Driver Schedule</button>`);
+  return `<section class="driver dcard" data-driver-card="${id}"><div class="driver-head"><div style="min-width:0"><div class="dname">${esc(d.name)}</div><div class="dtruck" title="${esc(lb.addr||"")}">${truckLine(v)}</div></div>${moreMenu(menu.join(""))}</div><div class="driver-routes" data-dcard="${id}" data-drop-dcard="${id}">${active.length?active.map(taskCard).join(""):`<div class="empty">Drop a task here</div>`}</div></section>`;
+}
+function bottom43(onIds){
+  let off=(drivers||[]).filter(d=>d.active!==false&&!onIds.includes(Number(d.id))&&(typeof driverVisibleOnBoard!=="function"||driverVisibleOnBoard(d)));
+  let offTxt=off.map(d=>{let sc=effectiveDriverSchedule(d.id);let st=sc&&sc.status&&sc.status!=="working"?sc.status.replace("_"," "):"off";return esc(d.name)+" ("+esc(st)+")"}).join(" · ");
+  let used=new Set(onIds.map(curTruck).filter(x=>x!=null));
+  let vs=vehicles().filter(v=>v.active!==false).slice().sort((a,b)=>Number(a.id)-Number(b.id));
+  let unk=stopsAll().filter(u=>!whoAt(u.vehicle_id,Date.parse(u.arrived_at)));
+  let chips=vs.filter(v=>!used.has(Number(v.id))||svcOf(v.id)).map(v=>{let vid=Number(v.id),sv=svcOf(vid);
+    let tt=tasks.filter(t=>!isMsg(t)&&!t.assigned_driver_id&&Number(t.vehicle_id)===vid&&t.status!=="completed");
+    let us=unk.filter(u=>Number(u.vehicle_id)===vid);
+    let m=[`<div class="mrow">${truckLine(vid)}</div>`];let lb=liveBits(vid);if(lb.addr)m.push(`<div class="mrow">📍 ${esc(lb.addr)}</div>`);
+    if(us.length)m.push(`<details class="truck-stops" open><summary>📍 ${us.length} stop${us.length>1?"s":""} · Driver unknown</summary>${us.map(stopRow).join("")}</details>`);
+    if(tt.length)m.push(`<div class="mrow">Tasks on this truck without a driver:</div>`+tt.map(taskCard).join(""));
+    return `<span class="tchip ${sv?"oos":""}" ${sv?"":`data-truck="${vid}" data-drop-truck="${vid}"`}>${truckLine(vid)}${us.length?`<span class="unk-stops" title="Stops with no driver clearly scheduled">· ${us.length} unknown-driver stop${us.length>1?"s":""}</span>`:""}${tt.length?`<span>· ${tt.length} task${tt.length>1?"s":""}</span>`:""}<button type="button" class="mini" onclick="SHIFT_openSvc(${vid})" title="In Service / Out of Service / At Repair Shop">⚙</button>${moreMenu(m.join(""))}</span>`}).join("");
+  // unknown-driver stops on trucks that do have a driver now
+  let unkUsed=unk.filter(u=>used.has(Number(u.vehicle_id))&&!svcOf(u.vehicle_id));
+  let unkHtml=unkUsed.length?`<span class="tchip">${moreMenu(`<details class="truck-stops" open><summary>📍 ${unkUsed.length} stop${unkUsed.length>1?"s":""} · Driver unknown</summary>${unkUsed.map(u=>`<div class="mrow">${esc(vName(u.vehicle_id))}</div>`+stopRow(u)).join("")}</details>`)}<span class="unk-stops">${unkUsed.length} Driver-unknown stop${unkUsed.length>1?"s":""} on driven trucks</span></span>`:"";
+  return `<div class="bottom-wide trucks-line"><span class="tl-title">🚛 Trucks</span>${chips||'<span class="muted">All trucks have a driver.</span>'}${unkHtml}<button class="mini" type="button" onclick="openDriverSchedule();setTimeout(()=>SHIFT_showTruckTab&&SHIFT_showTruckTab(),60)">Truck Schedule</button></div>`+
+    (off.length?`<div class="bottom-wide off-line">💤 Not working: ${offTxt}</div>`:"");
+}
+const render40=window.render;
+window.render=function(){
+  SH=around(boardDate);
+  let free=t=>!t.assigned_driver_id&&t.vehicle_id==null&&!isMsg(t);
+  let plan=tasks.filter(free).sort((a,b)=>((b.planning_stage||"ready")!=="brainstorm")-((a.planning_stage||"ready")!=="brainstorm")||(a.sort_order||0)-(b.sort_order||0));
+  let rl=$("ready")?.closest(".lane");if(rl)rl.style.display="none";
+  let rp=$("readyPaste"),bz=$("brainstorm");if(rp&&bz&&rp.nextElementSibling!==bz)bz.parentNode.insertBefore(rp,bz);
+  $("brainstorm").innerHTML=plan.length?plan.map(taskCard).join(""):'<div class="empty">Drop ideas here<br>Details can be incomplete.</div>';
+  $("brainCount").textContent=plan.length;$("ready").innerHTML="";
+  document.body.classList.add("simple-board");
+  let working=new Set(SH.filter(s=>s.date===boardDate&&s.working).map(s=>s.driverId));
+  tasks.filter(t=>t.assigned_driver_id&&!isMsg(t)&&t.status!=="completed").forEach(t=>working.add(Number(t.assigned_driver_id)));
+  let ds=(drivers||[]).filter(d=>working.has(Number(d.id))&&(typeof driverVisibleOnBoard!=="function"||driverVisibleOnBoard(d)));
+  const startOf=d=>{let s=SH.filter(x=>x.driverId===Number(d.id)&&x.working&&x.date===boardDate&&x.start!=null).map(x=>x.start);return s.length?Math.min(...s):9e15};
+  ds.sort((a,b)=>startOf(a)-startOf(b)||String(a.name).localeCompare(b.name));
+  let ids=ds.map(d=>Number(d.id));
+  let mt=tasks.filter(isMsg).filter(t=>!t.combined_into_task_id);
+  $("drivers").innerHTML=`<div class="bottom-wide stat-line" id="statLine"></div>`+ds.map(driverCard43).join("")+bottom43(ids)+(mt.length||MSG.length?`<div class="bottom-wide">${messengersCard()}</div>`:"");
+  try{updateMetrics()}catch(_){}
+  bindDrag();
+};
+const um40=window.updateMetrics;
+window.updateMetrics=function(){
+  try{um40()}catch(_){}
+  let e=$("statLine");if(!e)return;const g=id=>$(id)?.textContent||"0";
+  e.innerHTML=`<b>${g("mActive")}</b> active · <b>${g("mDrivers")}</b> drivers · <b>${g("mTasks")}</b> tasks today · <b>${g("mRate")}</b> done`;
+};
+/* task cards: Edit/Delete/Messenger/driver picker into ⋯ */
+const tc43=window.taskCard;
+window.taskCard=function(t){
+  let html=tc43.apply(this,arguments);
+  try{let tp=document.createElement("template");tp.innerHTML=html;let card=tp.content.querySelector(".task");if(!card)return html;
+    let acts=card.querySelector(".task-actions"),pick=card.querySelector(".task-driver-pick");
+    let inner=(acts?acts.innerHTML:"")+(pick?pick.outerHTML:"");if(pick)pick.remove();
+    if(inner.trim()){let head=card.querySelector(".route-card-head")||card.firstElementChild;let m=document.createElement("template");m.innerHTML=`<details class="more tmore" onclick="event.stopPropagation()" ondragstart="event.stopPropagation()"><summary title="Edit, delete, messenger…">⋯</summary><div class="more-body">${inner}</div></details>`;head.appendChild(m.content)}
+    return tp.innerHTML}catch(e){return html}
+};
+document.addEventListener("click",e=>{document.querySelectorAll("details.more[open]").forEach(d=>{if(!d.contains(e.target))d.open=false})});
+const bd43=window.bindDrag;
+window.bindDrag=function(){bd43();document.querySelectorAll(".tchip[data-truck]").forEach(z=>{z.ondragover=e=>{e.preventDefault();z.classList.add("over")};z.ondragleave=()=>z.classList.remove("over");z.ondrop=async e=>{e.preventDefault();z.classList.remove("over");if(dragId)await dropOn(z,dragId,null)}})};
 
 // first paint may have happened before this file loaded
 fetchV4().then(()=>{try{render()}catch(e){console.warn("v4 render",e)}});
