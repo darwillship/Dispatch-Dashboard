@@ -432,3 +432,129 @@ begin
 end $fn$;
 revoke all on function public.vzc_auto_status(bigint, text, timestamptz) from public, anon, authenticated;
 grant execute on function public.vzc_auto_status(bigint, text, timestamptz) to service_role;
+
+
+-- =====================================================================
+-- v4.0.0 (applied Oct 12, 2026 as migrations v400_truck_schedules_messengers_named_places + v400_service_role_grants)
+-- =====================================================================
+-- v4.0.0 (additive only): truck schedules, task truck + messenger columns, messengers, named places
+create table if not exists public.truck_schedules (
+  id bigserial primary key,
+  driver_id bigint not null references public.drivers(id),
+  vehicle_id bigint references public.vehicles(id),
+  days smallint[] not null default '{}',          -- 0=Sun .. 6=Sat (CT); a shift belongs to its START day
+  start_time time, end_time time,                 -- end <= start = overnight (ends next day)
+  active boolean not null default true,
+  note text,
+  seeded_from text,                               -- 'v400_seed' for rows built from driver_weekly_schedule + drivers.default_vehicle_id
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint truck_schedules_days_ok check (days <@ array[0,1,2,3,4,5,6]::smallint[])
+);
+create index if not exists truck_schedules_vehicle_idx on public.truck_schedules(vehicle_id);
+create index if not exists truck_schedules_driver_idx on public.truck_schedules(driver_id);
+
+create table if not exists public.messengers (
+  id bigserial primary key,
+  company text not null,
+  contact_name text,
+  phone text,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.named_places (
+  id bigserial primary key,
+  name text not null check (length(btrim(name)) > 0),
+  lat double precision not null check (lat between -90 and 90),
+  lon double precision not null check (lon between -180 and 180),
+  radius_m integer not null default 70 check (radius_m between 15 and 500),
+  address text,                                   -- the Verizon address it was named from (reference only)
+  created_by text,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.dispatch_tasks add column if not exists vehicle_id bigint references public.vehicles(id);
+alter table public.dispatch_tasks add column if not exists messenger_id bigint references public.messengers(id);
+alter table public.dispatch_tasks add column if not exists confirmation_number text;
+alter table public.dispatch_tasks add column if not exists messenger_cost numeric(10,2);
+create index if not exists dispatch_tasks_vehicle_idx on public.dispatch_tasks(vehicle_id);
+create index if not exists dispatch_tasks_messenger_idx on public.dispatch_tasks(messenger_id);
+alter table public.unplanned_stops add column if not exists named_place_id bigint references public.named_places(id);
+
+alter table public.truck_schedules enable row level security;
+alter table public.messengers enable row level security;
+alter table public.named_places enable row level security;
+drop policy if exists "truck schedules public testing" on public.truck_schedules;
+create policy "truck schedules public testing" on public.truck_schedules for all to anon, authenticated using (true) with check (true);
+drop policy if exists "messengers public testing" on public.messengers;
+create policy "messengers public testing" on public.messengers for all to anon, authenticated using (true) with check (true);
+drop policy if exists "named places read" on public.named_places;
+create policy "named places read" on public.named_places for select to anon, authenticated using (true);
+drop policy if exists "named places add" on public.named_places;
+create policy "named places add" on public.named_places for insert to anon, authenticated with check (true);
+drop policy if exists "named places edit" on public.named_places;
+create policy "named places edit" on public.named_places for update to anon, authenticated using (true) with check (true);
+grant select, insert, update, delete on public.truck_schedules, public.messengers to anon, authenticated;
+grant select, insert, update on public.named_places to anon, authenticated;
+grant usage, select on sequence public.truck_schedules_id_seq, public.messengers_id_seq, public.named_places_id_seq to anon, authenticated;
+
+-- seed: one row per driver per distinct shift time, days grouped, truck = drivers.default_vehicle_id (null = no truck yet)
+insert into public.truck_schedules (driver_id, vehicle_id, days, start_time, end_time, seeded_from)
+select w.driver_id, d.default_vehicle_id, array_agg(w.day_of_week::smallint order by w.day_of_week), w.start_time, w.end_time, 'v400_seed'
+from public.driver_weekly_schedule w join public.drivers d on d.id = w.driver_id
+where w.working = true
+  and not exists (select 1 from public.truck_schedules x where x.seeded_from = 'v400_seed')
+group by w.driver_id, d.default_vehicle_id, w.start_time, w.end_time;
+
+-- the GPS updater never changes messenger tasks
+create or replace function public.vzc_auto_status(p_task_id bigint, p_to text, p_completed_at timestamp with time zone DEFAULT NULL::timestamp with time zone)
+ returns text language plpgsql security definer set search_path to ''
+as $fn$
+declare
+  r public.dispatch_tasks%rowtype;
+  today date := (timezone('America/Chicago', now()))::date;
+  protected bigint[] := array[52,58,61,78,98,107,117,140,161,162];
+  n int;
+begin
+  if p_to is distinct from 'in_progress' and p_to is distinct from 'completed' then
+    return 'ignored: bad target';
+  end if;
+  select * into r from public.dispatch_tasks where id = p_task_id for update;
+  if not found then return 'ignored: missing'; end if;
+  if r.id = any (protected) then return 'ignored: protected'; end if;
+  if r.messenger_id is not null then return 'ignored: messenger'; end if;
+  if r.combined_into_task_id is not null then return 'ignored: combined'; end if;
+  if r.work_date is null or r.work_date < today then return 'ignored: past work_date'; end if;
+  if r.status_source = 'manual' then return 'ignored: manual'; end if;
+  if exists (
+    select 1 from public.shift_reminders s
+     where s.note ~ ('\[SHIFT-DRIVER task:' || p_task_id::text || ' (missed|refused)\]')
+  ) then return 'ignored: missed/refused flag'; end if;
+  if p_to = 'in_progress' then
+    if r.status is distinct from 'assigned' then return 'ignored: from=' || coalesce(r.status,'null'); end if;
+    update public.dispatch_tasks
+       set status = 'in_progress', status_source = 'auto_gps', status_auto_at = clock_timestamp()
+     where id = p_task_id and status = 'assigned' and messenger_id is null
+       and (status_source is null or status_source = 'auto_gps');
+    get diagnostics n = row_count;
+    return case when n > 0 then 'updated → in_progress' else 'race: no row' end;
+  end if;
+  if coalesce(r.status,'') not in ('assigned','in_progress') then return 'ignored: from=' || coalesce(r.status,'null'); end if;
+  update public.dispatch_tasks
+     set status = 'completed',
+         completed_at = coalesce(completed_at, p_completed_at, now()),
+         status_source = 'auto_gps',
+         status_auto_at = clock_timestamp()
+   where id = p_task_id and status in ('assigned','in_progress') and messenger_id is null
+     and (status_source is null or status_source = 'auto_gps');
+  get diagnostics n = row_count;
+  return case when n > 0 then 'updated → completed' else 'race: no row' end;
+end $fn$;
+revoke all on function public.vzc_auto_status(bigint,text,timestamptz) from public, anon, authenticated;
+grant execute on function public.vzc_auto_status(bigint,text,timestamptz) to service_role;
+
+grant select, insert, update, delete on public.truck_schedules, public.messengers, public.named_places to service_role;
+grant usage, select on sequence public.truck_schedules_id_seq, public.messengers_id_seq, public.named_places_id_seq to service_role;

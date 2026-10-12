@@ -158,10 +158,20 @@ export function attachStop(arrived: number, spans: TaskSpan[], baseArrivals: num
 // ---------- naming ----------
 /** Built-in locations of the dashboard (index.html LOC) — used only to NAME an unplanned stop. */
 export const BUILTIN_LOCATIONS: [string, string][] = [["ALG", "1053 N Schmidt Rd, Romeoville, IL 60446"], ["ENRU", "1000 Windham Pkwy, Bolingbrook, IL 60490"], ["Darwill Hillside", "11900 Roosevelt Rd, Hillside, IL 60162"], ["Darwill McCook", "8701 47th St Ste C, McCook, IL 60525"], ["South Suburban Post Office", "6801 W 73rd St, Bedford Park, IL 60499"], ["Fox Valley Post Office", "3900 Gabrielle Ln, Aurora, IL 60598"], ["Carol Stream Post Office", "550 E Fullerton Ave, Carol Stream, IL 60188"], ["Worth Post Office", "11114 S Harlem Ave, Worth, IL 60482"], ["Bolingbrook Post Office", "105 Canterbury Ln, Bolingbrook, IL 60440"], ["Darwill Oakbrook Tower Terrace", "1 Tower Ln, Oakbrook Terrace, IL 60181"], ["Envelopes Only", "2000 S Park Ave, Streamwood, IL 60107"], ["Federal Envelope", "608 Country Club Dr, Bensenville, IL 60106"], ["Universal Laminating", "910 Carlow Dr Ste A, Bolingbrook, IL 60490"], ["Platinum Converting", "1560 W Stearns Rd, Bartlett, IL 60103"], ["Victor Envelope", "301 Arthur Ct, Bensenville, IL 60106"], ["Supremex Naperville", "1500 Shore Rd, Naperville, IL 60563"], ["Supremex Chicago", "4114 S Peoria St, Chicago, IL 60609"], ["MSI", "1501 Morse Ave, Elk Grove Village, IL 60007"], ["Palatine Post Office", "1300 E Northwest Hwy, Palatine, IL 60095"]];
-export interface NamedPlace { name: string; address: string; place: Place; savedId: number | null }
+export interface NamedPlace { name: string; address: string; place: Place; savedId: number | null; namedPlaceId?: number | null; radiusM?: number | null }
+/** v4.0.0: team-named places (named_places, own radius, default 70 m) win: the NEAREST one whose radius covers the stop.
+ *  Otherwise the v3.10 rule: saved / known locations within 250 m (or the same address). */
 export function nameFor(c: { lat: number | null; lon: number | null; norm: string }, named: NamedPlace[]): NamedPlace | null {
+  let team: { n: NamedPlace; d: number } | null = null;
+  if (c.lat != null) for (const n of named) {
+    if (n.namedPlaceId == null || n.place.lat == null) continue;
+    const d = haversineM(c.lat, c.lon!, n.place.lat, n.place.lon!);
+    if (d <= (n.radiusM ?? 70) && (!team || d < team.d)) team = { n, d };
+  }
+  if (team) return team.n;
   let best: { n: NamedPlace; d: number } | null = null;
   for (const n of named) {
+    if (n.namedPlaceId != null) continue;
     const p = n.place;
     let d: number | null = null;
     if (c.lat != null && p.lat != null) d = haversineM(c.lat, c.lon!, p.lat, p.lon!);

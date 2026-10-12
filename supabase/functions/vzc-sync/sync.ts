@@ -12,12 +12,12 @@ const TRACK_REFRESH_MS = 15 * 60_000;  // refetch a parked truck's history at mo
 const MAX_GEOCODES_PER_RUN = 15;
 const UNPLANNED_REFRESH_MS = 9 * 60_000;  // trucks not on an open task: re-read their track at most every 9 min while moving
 const UNPLANNED_SETTLE_MS = 7 * 60_000;   // ...and once more 7 min after their last report (so a fresh engine-off stop can reach 5 min)
-const UP_COLS = ["driver_id", "task_id", "after_stop_id", "engine_off_at", "engine_on_at", "departed_at", "idle_minutes", "engine_off_minutes", "location_name", "address", "lat", "lon", "saved_location_id"];
+const UP_COLS = ["driver_id", "task_id", "after_stop_id", "engine_off_at", "engine_on_at", "departed_at", "idle_minutes", "engine_off_minutes", "location_name", "address", "lat", "lon", "saved_location_id", "named_place_id"];
 const WRITE_MAX_AGE_DAYS = 1;          // writes only for today + yesterday (CT); older dates are dry-run only
 // v3.12.0 auto status: never touched by the updater (stuck in_progress routes + the combined pair). Also enforced in SQL (vzc_auto_status).
 const AUTO_STATUS_PROTECTED = [52, 58, 61, 78, 98, 107, 117, 140, 161, 162];
 const LIVE_STATE: Record<string, string> = { Moving: "Moving", Idle: "Idle", Stop: "Engine off" };
-const TASK_COLS = "id,created_at,title,status,task_type,work_date,scheduled_at,completed_at,assigned_driver_id,pickup_name,pickup_address,delivery_name,delivery_address,is_route,combined_into_task_id,gps_departed_at,gps_arrived_at,gps_left_destination_at,gps_vehicle_id,gps_source,gps_origin_engine_on_at,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_returned_base_at,gps_match_method,gps_match_distance_m";
+const TASK_COLS = "id,created_at,vehicle_id,messenger_id,title,status,task_type,work_date,scheduled_at,completed_at,assigned_driver_id,pickup_name,pickup_address,delivery_name,delivery_address,is_route,combined_into_task_id,gps_departed_at,gps_arrived_at,gps_left_destination_at,gps_vehicle_id,gps_source,gps_origin_engine_on_at,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_returned_base_at,gps_match_method,gps_match_distance_m";
 const STOP_COLS = "id,task_id,seq,location_name,location_address,status,gps_arrived_at,gps_departed_at,gps_vehicle_id,gps_source,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_match_method,gps_match_distance_m";
 
 export interface SyncOptions { dryRun: boolean; dates?: string[]; vehicles?: string[]; source?: string; recompute?: boolean; assignSim?: { ignoreTrucksOf: number[]; allDay: boolean } }
@@ -163,25 +163,28 @@ export async function runSync(env: Env, opt: SyncOptions) {
   const base = M.makePlace("Darwill McCook", M.BASE_ADDRESS, null)!;
 
   // driver roster + schedules (v3.11.0): who had which truck when (shift times, overnight shifts, daily picks, defaults)
-  let roster: { drivers: A.DriverRow[]; weekly: A.WeeklyRow[]; sched: A.SchedRow[] } | null = null;
+  let roster: { drivers: A.DriverRow[]; weekly: A.WeeklyRow[]; sched: A.SchedRow[]; truck: A.TruckSchedRow[] | null } | null = null;
   async function loadRoster(fresh = false) {
     if (roster && !fresh) return roster;
     const lo = addDays(dates[0] < today ? dates[0] : today, -2), hi = addDays(today, 1);
-    const [d, w, s] = await Promise.all([
+    const [d, w, s, ts] = await Promise.all([
       db.from("drivers").select("id,name,active,default_vehicle_id").order("id"),
       db.from("driver_weekly_schedule").select("driver_id,day_of_week,working,start_time,end_time"),
       db.from("driver_schedule").select("*").gte("work_date", lo).lte("work_date", hi),
+      db.from("truck_schedules").select("id,driver_id,vehicle_id,days,start_time,end_time,active"),
     ]);
+    if (ts.error) { warnings.push("read truck_schedules (v4.0.0 migration missing? using v3.11 rules): " + ts.error.message); summary.schedule_model = "v3.11 (weekly + default truck)"; }
+    else summary.schedule_model = "v4.0.0 truck_schedules (strict, no grace)";
     if (d.error) throw new Error("read drivers: " + d.error.message);
     if (w.error) warnings.push("read driver_weekly_schedule: " + w.error.message);
     if (s.error) warnings.push("read driver_schedule: " + s.error.message);
-    roster = { drivers: (d.data || []) as any, weekly: (w.data || []) as any, sched: (s.data || []) as any };
+    roster = { drivers: (d.data || []) as any, weekly: (w.data || []) as any, sched: (s.data || []) as any, truck: ts.error ? null : (ts.data || []) as any };
     return roster;
   }
   /** shifts of `date` and the day before (overnight shifts own their after-midnight time) */
   async function shiftsAround(date: string, fresh = false): Promise<A.Shift[]> {
     const r = await loadRoster(fresh);
-    const out = [...A.shiftsFor(addDays(date, -1), r.drivers, r.sched, r.weekly), ...A.shiftsFor(date, r.drivers, r.sched, r.weekly)];
+    const out = [...A.shiftsFor(addDays(date, -1), r.drivers, r.sched, r.weekly, r.truck), ...A.shiftsFor(date, r.drivers, r.sched, r.weekly, r.truck)];
     if (opt.dryRun && opt.assignSim?.ignoreTrucksOf.length) for (const s of out) if (opt.assignSim.ignoreTrucksOf.includes(s.driverId)) { s.vehicleId = null; s.vehicleSource = null; s.auto = false; }
     return out;
   }
@@ -208,6 +211,13 @@ export async function runSync(env: Env, opt: SyncOptions) {
       const p = await placeFor(name, address);
       if (p && p.lat != null) named!.push({ name, address, place: p, savedId });
     };
+    // v4.0.0: team-named places (dashboard "Edit location name"), matched within their own radius, nearest wins
+    const { data: np, error: ne } = await db.from("named_places").select("id,name,lat,lon,radius_m,address,active").order("id");
+    if (ne) warnings.push("read named_places: " + ne.message);
+    for (const r of (np || []) as any[]) if (r.active !== false && r.lat != null && r.lon != null) {
+      const p = M.makePlace(r.name, r.address || r.name, { status: "ok", lat: Number(r.lat), lon: Number(r.lon) } as any);
+      if (p) named!.push({ name: r.name, address: r.address || "", place: { ...p, lat: Number(r.lat), lon: Number(r.lon) }, savedId: null, namedPlaceId: Number(r.id), radiusM: Number(r.radius_m) || 70 });
+    }
     const { data: sl, error: se } = await db.from("saved_locations").select("id,name,address").order("id");
     if (se) warnings.push("read saved_locations: " + se.message);
     for (const r of (sl || []) as any[]) await add(r.name, r.address, r.id);
@@ -231,9 +241,13 @@ export async function runSync(env: Env, opt: SyncOptions) {
 
     const { data: trows, error: terr } = await db.from("dispatch_tasks").select(TASK_COLS).eq("work_date", date).order("id");
     if (terr) throw new Error("read tasks: " + terr.message);
-    const { data: plan, error: perr } = await db.rpc("driver_vehicle_for_date", { p_work_date: date });
-    if (perr) warnings.push("planned trucks (driver_vehicle_for_date): " + perr.message);
-    const planned = new Map<number, number | null>((plan || []).map((p: any) => [p.driver_id, p.vehicle_id]));
+    // v4.0.0: planned truck = the task's stored vehicle_id, else the driver's scheduled truck (truck_schedules / Daily Overrides)
+    const dayShifts = await shiftsAround(date);
+    const plan = (await loadRoster()).drivers.map((d) => ({ driver_id: Number(d.id), vehicle_id: A.plannedTruckFor(Number(d.id), date, null, dayShifts),
+      schedule_status: dayShifts.some((s) => s.driverId === Number(d.id) && s.date === date && s.working) ? "working" : "off" }));
+    const plannedFor = (t: any): number | null => t.vehicle_id != null ? Number(t.vehicle_id)
+      : t.assigned_driver_id != null ? A.plannedTruckFor(Number(t.assigned_driver_id), date, t.scheduled_at ? Date.parse(t.scheduled_at) : null, dayShifts) : null;
+    if (date === today) { const vn = (id: number) => vehicles.find((x) => x.id === id)?.name || "truck #" + id; summary.schedule_conflicts = A.conflicts(dayShifts.filter((s) => s.date === date), vn).map((c) => c.text); }
     const routeIds = (trows || []).filter((t: any) => t.is_route).map((t: any) => t.id);
     const { data: srows, error: serr } = routeIds.length ? await db.from("dispatch_task_stops").select(STOP_COLS).in("task_id", routeIds).order("seq") : { data: [] as any[], error: null };
     if (serr) throw new Error("read route stops: " + serr.message);
@@ -255,8 +269,9 @@ export async function runSync(env: Env, opt: SyncOptions) {
     for (const t of (trows || []) as any[]) {
       const skip = (why: string) => dsum.skipped.push({ task_id: t.id, why });
       if (t.combined_into_task_id) { skip("combined into route #" + t.combined_into_task_id); continue; }
-      if (!t.assigned_driver_id) { skip("unassigned"); continue; }
-      if (env.excludeDrivers.includes(Number(t.assigned_driver_id))) { skip("driver excluded (VZC_EXCLUDE_DRIVER_IDS)"); continue; }
+      if (t.messenger_id != null) { skip("messenger — not tracked by GPS"); continue; }
+      if (!t.assigned_driver_id && t.vehicle_id == null) { skip("unassigned"); continue; }
+      if (t.assigned_driver_id && env.excludeDrivers.includes(Number(t.assigned_driver_id))) { skip("driver excluded (VZC_EXCLUDE_DRIVER_IDS)"); continue; }
       if (/cancel/i.test(t.status || "")) { skip("cancelled"); continue; }
       const origin = await placeFor(t.pickup_name || "origin", t.pickup_address);
       const stops: M.StopTarget[] = [];
@@ -275,9 +290,11 @@ export async function runSync(env: Env, opt: SyncOptions) {
         : t.gps_arrived_at == null || t.gps_departed_at == null || t.gps_returned_base_at == null || (!destBase && t.gps_left_destination_at == null);
       if (!open) { skip("already filled"); continue; }
       targets.push({
-        id: t.id, kind: t.is_route ? "route" : "single", title: t.title, driverId: t.assigned_driver_id, plannedVehicleId: planned.get(t.assigned_driver_id) ?? null,
+        id: t.id, kind: t.is_route ? "route" : "single", title: t.title, driverId: t.assigned_driver_id ?? null, plannedVehicleId: plannedFor(t),
         origin, dest, stops, existing: t, completedAt: t.completed_at ? Date.parse(t.completed_at) : null, scheduledAt: t.scheduled_at ? Date.parse(t.scheduled_at) : null,
         createdAt: t.created_at ? Date.parse(t.created_at) : null,
+        vehicleLocked: t.vehicle_id != null,
+        shiftWindows: t.assigned_driver_id ? dayShifts.filter((s) => s.driverId === Number(t.assigned_driver_id) && s.date === date && A.clear(s)).map((s) => [s.start!, s.end!] as [number, number]) : null,
       });
     }
     dsum.open_tasks = targets.length;
@@ -372,8 +389,8 @@ export async function runSync(env: Env, opt: SyncOptions) {
     { const { data, error } = await db.from("dispatch_tasks").select("id,status_source").eq("work_date", date); if (!error) for (const r of (data || []) as any[]) srcOf.set(r.id, r.status_source); }
     for (const t0 of trows) {
       const t = { ...t0, status_source: srcOf.get(t0.id) ?? null };
-      if (AUTO_STATUS_PROTECTED.includes(t.id) || t.combined_into_task_id || !t.assigned_driver_id) continue;
-      if (env.excludeDrivers.includes(Number(t.assigned_driver_id))) continue;
+      if (AUTO_STATUS_PROTECTED.includes(t.id) || t.combined_into_task_id || t.messenger_id != null || (!t.assigned_driver_id && t.vehicle_id == null)) continue;
+      if (t.assigned_driver_id && env.excludeDrivers.includes(Number(t.assigned_driver_id))) continue;
       const dec = M.autoStatusFor(t, srows.filter((x) => x.task_id === t.id), byTask.get(t.id));
       if (!dec) continue;
       const st = String(t.status || ""), to = dec.to, at = dec.at;
@@ -393,7 +410,7 @@ export async function runSync(env: Env, opt: SyncOptions) {
   async function unplannedForDate(date: string, dsum: any, tracks: M.VehicleTrack[], matches: M.TaskMatch[], trows: any[], srows: any[], plan: any[], winStart: number, winEnd: number) {
     const dayStart = winStart, dayEnd = M.ctMidnightUtc(addDays(date, 1));
     const ms = (v: any) => (v == null ? null : Date.parse(v));
-    const live = trows.filter((t) => !/cancel/i.test(t.status || ""));
+    const live = trows.filter((t) => !/cancel/i.test(t.status || "") && t.messenger_id == null);
     const byTaskMatch = new Map(matches.map((m) => [m.taskId, m]));
     const vehOf = (t: any): number | null => byTaskMatch.get(t.id)?.vehicleId ?? (t.gps_vehicle_id != null ? Number(t.gps_vehicle_id) : null);
     const plannedTruck = new Map<number, number | null>(plan.map((p: any) => [p.driver_id, p.vehicle_id]));
@@ -418,7 +435,7 @@ export async function runSync(env: Env, opt: SyncOptions) {
     for (const tr of tracks) {
       const v = tr.vehicleId;
       const schedDrivers = plan.filter((p: any) => p.vehicle_id === v && working(p)).map((p: any) => Number(p.driver_id));
-      const related = live.filter((t) => vehOf(t) === v || !t.assigned_driver_id ||
+      const related = live.filter((t) => vehOf(t) === v || Number(t.vehicle_id) === v || (!t.assigned_driver_id && t.vehicle_id == null) ||
         (t.assigned_driver_id && (plannedTruck.get(t.assigned_driver_id) === v || schedDrivers.includes(Number(t.assigned_driver_id)))));
       const planned = related.flatMap((t) => placesOf.get(t.id) || []);
       // what this truck was working on (stored GPS times + this run's matches); combined originals are hidden, so never attach to them
@@ -454,11 +471,11 @@ export async function runSync(env: Env, opt: SyncOptions) {
       for (const c of judged.filter((c) => c.verdict === "unplanned")) {
         const at = U.attachStop(c.arrived, spans, baseArr);
         const task = at.taskId != null ? live.find((t) => t.id === at.taskId) : null;
-        // driver: the task's driver, else whoever had this truck on their shift then (schedule + shift times), else the one driver with tasks on it
+        // v4.0.0 driver: ONLY the driver clearly scheduled on this truck at that moment (no grace, no guessing); else null = "Driver unknown"
+        void task; void truckDrivers;
         const who = A.whoHadTruck(v, c.arrived, shifts, env.excludeDrivers);
-        let driverId: number | null = task?.assigned_driver_id ?? who?.driverId ?? null;
-        if (driverId == null && truckDrivers.length === 1) { const s = shifts.find((x) => x.driverId === truckDrivers[0] && x.date === date); if (!s || A.covers(s, c.arrived)) driverId = truckDrivers[0]; }
-        const workDate = !task && who && who.driverId === driverId ? who.date : date;
+        const driverId: number | null = who?.driverId ?? null;
+        const workDate = who ? who.date : date;
         if (driverId != null && env.excludeDrivers.includes(Number(driverId))) continue;
         const nm = U.nameFor(c, await namedPlaces());
         const done = c.departed != null;
@@ -467,7 +484,7 @@ export async function runSync(env: Env, opt: SyncOptions) {
           arrived_at: new Date(c.arrived).toISOString(), engine_off_at: c.engineOff != null ? new Date(c.engineOff).toISOString() : null,
           engine_on_at: done && c.engineOn != null ? new Date(c.engineOn).toISOString() : null, departed_at: done ? new Date(c.departed!).toISOString() : null,
           idle_minutes: done ? c.idleMinutes : null, engine_off_minutes: done ? c.offMinutes : null,
-          location_name: nm?.name ?? null, address: (c.addr ?? nm?.address ?? "").replace(/, USA$/, "") || null, lat: c.lat, lon: c.lon, saved_location_id: nm?.savedId ?? null, source: "vzc_auto",
+          location_name: nm?.name ?? null, address: (c.addr ?? nm?.address ?? "").replace(/, USA$/, "") || null, lat: c.lat, lon: c.lon, saved_location_id: nm?.savedId ?? null, named_place_id: nm?.namedPlaceId ?? null, source: "vzc_auto",
         };
         const ex = existing.find((e) => Number(e.vehicle_id) === v && Math.abs(Date.parse(e.arrived_at) - c.arrived) <= U.UNPLANNED_MATCH_MS);
         const set: Record<string, any> = {};
@@ -501,7 +518,8 @@ export async function runSync(env: Env, opt: SyncOptions) {
     if (ge) { reportOnly = true; summary.v311_note = "v3.11.0 migration not applied yet — truck auto-assign and re-attribution are report-only"; }
   }
   if (upDates.has(today) && upTable) {
-    try { await autoAssign(); } catch (e) { summary.assign_error = String((e as Error)?.message || e).slice(0, 300); warnings.push("auto truck assignment: " + summary.assign_error); }
+    summary.assign = { retired: "v4.0.0 — trucks come from the truck schedule; the updater no longer assigns trucks or writes driver_schedule" };
+    if (false) try { await autoAssign(); } catch (e) { summary.assign_error = String((e as Error)?.message || e).slice(0, 300); warnings.push("auto truck assignment: " + summary.assign_error); }
     try { await reattribute(); } catch (e) { summary.reattribute_error = String((e as Error)?.message || e).slice(0, 300); warnings.push("unplanned re-attribution: " + summary.reattribute_error); }
   }
 
@@ -607,28 +625,21 @@ export async function runSync(env: Env, opt: SyncOptions) {
     };
     const nameOf = (id: number | null) => id == null ? "(no driver — truck list)" : roster!.drivers.find((d) => Number(d.id) === id)?.name || `driver #${id}`;
     const vName = (id: number) => vehicles.find((x) => x.id === Number(id))?.name || `truck #${id}`;
+    // v4.0.0: fill-only. A stop without a driver gets the driver clearly scheduled on that truck at that moment; a stop that
+    // already has a driver is never changed (disagreements are only reported). Nothing is guessed.
+    void spansFor;
+    out.disagree = [];
     for (const r of rows as any[]) {
       out.checked++;
       const v = Number(r.vehicle_id), t = Date.parse(r.arrived_at), cal = A.ctDate(t);
       const cur = r.driver_id != null ? Number(r.driver_id) : null;
-      const task = r.task_id != null ? live.find((x) => x.id === r.task_id) : null;
-      if (task && !task.combined_into_task_id && task.assigned_driver_id != null && Number(task.assigned_driver_id) === cur) continue;  // on its driver's task: keep
-      const sh = await shiftsAt(cal);
-      const who = A.whoHadTruck(v, t, sh, env.excludeDrivers);
-      let want: number | null = who?.driverId ?? null;
-      let date = who ? who.date : cal;
-      const at = U.attachStop(t, [...spansFor(v, cal), ...(date !== cal ? spansFor(v, date) : [])], []);
-      const atTask = at.taskId != null ? live.find((x) => x.id === at.taskId) : null;
-      if (atTask?.assigned_driver_id != null && !env.excludeDrivers.includes(Number(atTask.assigned_driver_id))) { want = Number(atTask.assigned_driver_id); date = atTask.work_date; }
-      if (want == null && cur != null && live.some((x) => x.work_date === cal && vehOf(x) === v && Number(x.assigned_driver_id) === cur)) continue; // driver with tasks on that truck that day
-      if (want === cur && date === r.work_date) continue;
-      const set: Record<string, any> = { driver_id: want, task_id: atTask ? at.taskId : null, after_stop_id: atTask ? at.afterStopId : null, work_date: date, updated_at: nowIso };
-      const rec = { id: r.id, truck: vName(v), arrived: A.ctClock(t), from: nameOf(cur), to: nameOf(want), work_date: date, task_id: set.task_id, why: atTask ? `on ${atTask.is_route ? "route" : "task"} #${atTask.id}` : who?.why ?? "nobody had this truck on shift then" };
-      out.moved.push(rec);
+      const who = A.whoHadTruck(v, t, await shiftsAt(cal), env.excludeDrivers);
+      if (cur != null) { if (who?.driverId !== cur) out.disagree.push({ id: r.id, truck: vName(v), arrived: A.ctClock(t), stored: nameOf(cur), schedule_says: who ? nameOf(who.driverId) : "Driver unknown" }); continue; }
+      if (!who) continue;
+      const set: Record<string, any> = { driver_id: who.driverId, work_date: who.date, updated_at: nowIso };
+      out.moved.push({ id: r.id, truck: vName(v), arrived: A.ctClock(t), to: nameOf(who.driverId), work_date: who.date, why: who.why });
       if (reportOnly) continue;
-      let q = db.from("unplanned_stops").update(set, { count: "exact" }).eq("id", r.id);
-      q = cur == null ? q.is("driver_id", null) : q.eq("driver_id", cur);   // only if nobody changed it meanwhile
-      const { error: ue } = await q;
+      const { error: ue } = await db.from("unplanned_stops").update(set, { count: "exact" }).eq("id", r.id).is("driver_id", null);
       if (ue) out.write_errors.push(`unplanned #${r.id}: ${ue.message}`);
     }
   }

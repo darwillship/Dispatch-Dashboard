@@ -1,9 +1,12 @@
-// vzc-sync / assign.ts (v3.11.0) — pure logic: who was driving a truck at a given moment, and automatic truck assignment.
+// vzc-sync / assign.ts (v4.0.0) — pure logic: who was driving a truck at a given moment.
+// v4.0.0: trucks come from truck_schedules (driver + truck + weekdays + shift times) and Daily Overrides (driver_schedule).
+// Strict: a moment belongs to a driver only inside a clearly scheduled shift (start AND end times, no grace). Anything else is
+// "Driver unknown" (null) — never guessed. Automatic truck assignment (decideAssign) is retired; the code stays for reference/tests.
 // No database or network access here (sync.ts does the reads/writes), so it is fully unit-testable.
 import type { Ev } from "./match.ts";
 
-export const SHIFT_SLACK_BEFORE_MS = 60 * 60_000;  // drivers start up to 1 h before their scheduled start
-export const SHIFT_SLACK_AFTER_MS = 60 * 60_000;   // ...and finish up to 1 h after their scheduled end
+export const SHIFT_SLACK_BEFORE_MS = 0;  // v4.0.0: no grace (was 1 h in v3.11)
+export const SHIFT_SLACK_AFTER_MS = 0;
 export const TIMESHEET_WINDOW_MS = 30 * 60_000;    // a Time Sheet clock-in / pre-trip naming the truck within 30 min of ignition wins
 export const IGNITION_MIN_OFF_MS = 20 * 60_000;    // "truck turns on" = ignition after >= 20 min off, or first movement after >= 20 min still
 export const AUTO_ASSIGN_LOOKBACK_MS = 3 * 3600_000; // live runs only act on ignitions from the last 3 h (no surprise back-filling)
@@ -11,13 +14,14 @@ const WORKING = new Set(["working", "messenger"]);
 
 export interface DriverRow { id: number; name: string; active: boolean | null; default_vehicle_id: number | null }
 export interface SchedRow { id?: number; driver_id: number; work_date: string; status: string | null; start_time: string | null; end_time: string | null; vehicle_id: number | null; vehicle_source?: string | null; auto_assigned_at?: string | null }
+export interface TruckSchedRow { id: number; driver_id: number; vehicle_id: number | null; days: number[] | null; start_time: string | null; end_time: string | null; active: boolean | null }
 export interface WeeklyRow { driver_id: number; day_of_week: number; working: boolean | null; start_time: string | null; end_time: string | null }
 export interface Shift {
   driverId: number; name: string; date: string; working: boolean;
   start: number | null; end: number | null;          // UTC ms (end on the next day for overnight shifts)
   timesFrom: "override" | "weekly" | null;           // where the shift times came from (null = no times anywhere)
-  vehicleId: number | null; vehicleSource: "override" | "default" | null; auto: boolean;
-  row: SchedRow | null; weekly: WeeklyRow | null; active: boolean;
+  vehicleId: number | null; vehicleSource: "override" | "default" | "weekly" | null; auto: boolean;
+  row: SchedRow | null; weekly: WeeklyRow | null; active: boolean; schedId?: number | null;
 }
 
 // ---- CT clock helpers (DST-safe) ----
@@ -41,22 +45,50 @@ export function ctClock(t: number | null | undefined): string {
   return new Date(t).toLocaleTimeString("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit" });
 }
 
-/** Effective shift per driver for one date: daily override row (Driver Schedule → Daily Overrides) else the weekly schedule.
- *  Times: override times, else weekly times for that weekday (an override row without times keeps the weekly times). */
-export function shiftsFor(date: string, drivers: DriverRow[], sched: SchedRow[], weekly: WeeklyRow[]): Shift[] {
+/** Effective shifts for one date (a shift belongs to its START date in CT; end <= start = ends next day).
+ *  v4.0.0 (truckSched given): Daily Override row for driver+date replaces the weekly truck schedule for that driver/date:
+ *   - status off/pto/call_off -> not working;
+ *   - times: override times, else the weekly rows' times; truck: override truck (a v3.11 "auto_gps" pick is NOT trusted), else weekly truck.
+ *  Without truckSched (pre-v4 database): the v3.11 rules (weekly times + daily pick / drivers.default_vehicle_id). */
+export function shiftsFor(date: string, drivers: DriverRow[], sched: SchedRow[], weekly: WeeklyRow[], truckSched?: TruckSchedRow[] | null): Shift[] {
   const dow = new Date(date + "T12:00:00Z").getUTCDay();
-  return drivers.map((d) => {
+  const span = (st: string | null, en: string | null): [number | null, number | null] => {
+    if (!st || !en) return [null, null];
+    const a = ctAt(date, st.slice(0, 5)); let b = ctAt(date, en.slice(0, 5)); if (b <= a) b = ctAt(addDays(date, 1), en.slice(0, 5));
+    return [a, b];
+  };
+  const out: Shift[] = [];
+  for (const d of drivers) {
     const row = sched.find((r) => Number(r.driver_id) === Number(d.id) && String(r.work_date).slice(0, 10) === date) || null;
     const w = weekly.find((x) => Number(x.driver_id) === Number(d.id) && Number(x.day_of_week) === dow) || null;
+    const active = d.active !== false;
+    if (truckSched) {
+      const base = truckSched.filter((r) => Number(r.driver_id) === Number(d.id) && r.active !== false && (r.days || []).map(Number).includes(dow));
+      const ovTruck = row && row.vehicle_id != null && row.vehicle_source !== "auto_gps" ? Number(row.vehicle_id) : null;
+      const mk = (working: boolean, st: string | null, en: string | null, timesFrom: Shift["timesFrom"], vehicleId: number | null, vehicleSource: Shift["vehicleSource"], schedId: number | null): Shift => {
+        const [start, end] = working ? span(st, en) : [null, null];
+        return { driverId: Number(d.id), name: d.name, date, working, start, end, timesFrom: start != null ? timesFrom : null, vehicleId, vehicleSource: vehicleId != null ? vehicleSource : null, auto: false, row, weekly: w, active, schedId };
+      };
+      if (row) {
+        const working = WORKING.has(String(row.status || "working").toLowerCase());
+        if (!working) { out.push(mk(false, null, null, null, null, null, null)); continue; }
+        if (row.start_time && row.end_time) { const bv = [...new Set(base.map((b) => b.vehicle_id).filter((x) => x != null).map(Number))]; out.push(mk(true, row.start_time, row.end_time, "override", ovTruck ?? (bv.length === 1 ? bv[0] : null), ovTruck != null ? "override" : "weekly", base.length === 1 ? base[0].id : null)); continue; }
+        if (base.length) { for (const b of base) out.push(mk(true, b.start_time, b.end_time, "weekly", ovTruck ?? (b.vehicle_id != null ? Number(b.vehicle_id) : null), ovTruck != null ? "override" : "weekly", b.id)); continue; }
+        out.push(mk(true, null, null, null, ovTruck, "override", null)); continue;
+      }
+      if (!base.length) { out.push(mk(false, null, null, null, null, null, null)); continue; }
+      for (const b of base) out.push(mk(true, b.start_time, b.end_time, "weekly", b.vehicle_id != null ? Number(b.vehicle_id) : null, "weekly", b.id));
+      continue;
+    }
     const working = row ? WORKING.has(String(row.status || "working").toLowerCase()) : !!w?.working;
     const st = row?.start_time || w?.start_time || null, en = row?.end_time || w?.end_time || null;
     const timesFrom = row?.start_time ? "override" : (st ? "weekly" : null);
-    let start: number | null = null, end: number | null = null;
-    if (st && en) { start = ctAt(date, st.slice(0, 5)); end = ctAt(date, en.slice(0, 5)); if (end <= start) end = ctAt(addDays(date, 1), en.slice(0, 5)); }
+    const [start, end] = span(st, en);
     const vehicleId = row?.vehicle_id != null ? Number(row.vehicle_id) : d.default_vehicle_id != null ? Number(d.default_vehicle_id) : null;
     const vehicleSource = row?.vehicle_id != null ? "override" : d.default_vehicle_id != null ? "default" : null;
-    return { driverId: Number(d.id), name: d.name, date, working, start, end, timesFrom, vehicleId, vehicleSource, auto: row?.vehicle_source === "auto_gps" && row?.vehicle_id != null, row, weekly: w, active: d.active !== false } as Shift;
-  });
+    out.push({ driverId: Number(d.id), name: d.name, date, working, start, end, timesFrom, vehicleId, vehicleSource, auto: row?.vehicle_source === "auto_gps" && row?.vehicle_id != null, row, weekly: w, active } as Shift);
+  }
+  return out;
 }
 
 /** Shift window with slack; a working driver without any times counts for the whole CT day. */
@@ -74,21 +106,43 @@ export const overlaps = (a: Shift, b: Shift) => { const [a0, a1] = windowOf(a, f
  *  Juan must not take it away from Paul's later shift). */
 export function truckOf(s: Shift, all: Shift[]): number | null {
   if (s.vehicleId == null) return null;
-  if (s.vehicleSource === "default" && all.some((o) => o.date === s.date && o.driverId !== s.driverId && o.working && o.vehicleSource === "override" && o.vehicleId === s.vehicleId && overlaps(o, s))) return null;
+  if ((s.vehicleSource === "default" || s.vehicleSource === "weekly") && all.some((o) => o.date === s.date && o.driverId !== s.driverId && o.working && o.vehicleSource === "override" && o.vehicleId === s.vehicleId && overlaps(o, s))) return null;
   return s.vehicleId;
 }
 
 export interface WhoResult { driverId: number; date: string; why: string }
-/** Who had truck `vehicleId` at time `t`: working drivers whose truck is that truck and whose shift (±1 h) covers t.
- *  Shifts of the previous date are included, so a 9 PM–5:30 AM shift owns its after-midnight stops (work_date = shift date).
- *  Ties: a daily pick beats a default truck, then the shift without slack; still tied -> nobody (truck-level). */
+/** "Clearly scheduled": working, active, start AND end times. */
+export const clear = (s: Shift) => s.working && s.active && s.start != null && s.end != null;
+/** v4.0.0 strict: who had truck `vehicleId` at time `t` = the ONE driver whose clearly scheduled shift on that truck covers t
+ *  (no grace). Shifts of the previous date are included, so a 9 PM–5:30 AM shift owns its after-midnight stops (work_date = start date).
+ *  Two drivers on the truck at that moment, or that driver also on another truck at that moment -> null ("Driver unknown"). */
 export function whoHadTruck(vehicleId: number, t: number, shifts: Shift[], exclude: number[] = []): WhoResult | null {
-  let c = shifts.filter((s) => s.working && s.active && !exclude.includes(s.driverId) && truckOf(s, shifts) === vehicleId && covers(s, t));
-  if (c.length > 1) { const o = c.filter((s) => s.vehicleSource === "override"); if (o.length >= 1) c = o; }
-  if (c.length > 1) { const strict = c.filter((s) => covers(s, t, false)); if (strict.length >= 1) c = strict; }
+  const c = shifts.filter((s) => clear(s) && !exclude.includes(s.driverId) && truckOf(s, shifts) === vehicleId && t >= s.start! && t < s.end!);
   if (c.length !== 1) return null;
   const s = c[0];
-  return { driverId: s.driverId, date: s.date, why: `${s.name}: ${s.vehicleSource === "override" ? (s.auto ? "auto-assigned" : "daily") : "default"} truck, shift ${s.start != null ? ctClock(s.start) + "–" + ctClock(s.end) : "(no times, whole day)"} (${s.date})` };
+  if (shifts.some((o) => o !== s && o.driverId === s.driverId && clear(o) && o.vehicleId != null && truckOf(o, shifts) !== vehicleId && t >= o.start! && t < o.end!)) return null;
+  return { driverId: s.driverId, date: s.date, why: `${s.name}: ${s.vehicleSource === "override" ? "daily" : s.vehicleSource === "weekly" ? "weekly schedule" : "default"} truck, shift ${ctClock(s.start)}–${ctClock(s.end)} (${s.date})` };
+}
+
+/** The truck a driver is planned on for a date: the shift covering `t` (if given), else the driver's single truck that date; else null. */
+export function plannedTruckFor(driverId: number, date: string, t: number | null, shifts: Shift[]): number | null {
+  const mine = shifts.filter((s) => s.driverId === Number(driverId) && s.date === date && s.working && s.vehicleId != null);
+  if (t != null) { const hit = mine.filter((s) => s.start != null && t >= s.start && t < s.end!).map((s) => truckOf(s, shifts)).filter((x) => x != null); if (new Set(hit).size === 1) return hit[0]!; }
+  const vs = [...new Set(mine.map((s) => truckOf(s, shifts)).filter((x) => x != null))];
+  return vs.length === 1 ? vs[0]! : null;
+}
+
+export interface Conflict { kind: "truck" | "driver"; date: string; vehicleIds: number[]; driverIds: number[]; from: number; to: number; text: string }
+/** Overlaps among clearly scheduled shifts: one truck with two drivers at the same time, or one driver on two trucks. */
+export function conflicts(shifts: Shift[], vName: (id: number) => string = (id) => "truck #" + id): Conflict[] {
+  const cs = shifts.filter((s) => clear(s) && truckOf(s, shifts) != null), out: Conflict[] = [];
+  for (let i = 0; i < cs.length; i++) for (let j = i + 1; j < cs.length; j++) {
+    const a = cs[i], b = cs[j]; const from = Math.max(a.start!, b.start!), to = Math.min(a.end!, b.end!);
+    if (from >= to) continue;
+    if (a.vehicleId === b.vehicleId && a.driverId !== b.driverId) out.push({ kind: "truck", date: a.date, vehicleIds: [a.vehicleId!], driverIds: [a.driverId, b.driverId], from, to, text: `${vName(a.vehicleId!)}: ${a.name} and ${b.name} overlap ${ctClock(from)}–${ctClock(to)}` });
+    else if (a.driverId === b.driverId && a.vehicleId !== b.vehicleId) out.push({ kind: "driver", date: a.date, vehicleIds: [a.vehicleId!, b.vehicleId!], driverIds: [a.driverId], from, to, text: `${a.name} is on ${vName(a.vehicleId!)} and ${vName(b.vehicleId!)} ${ctClock(from)}–${ctClock(to)}` });
+  }
+  return out;
 }
 
 // ---- automatic truck assignment ----

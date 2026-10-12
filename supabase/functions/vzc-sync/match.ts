@@ -211,6 +211,10 @@ export interface TaskTarget {
   id: number; kind: "single" | "route"; title: string; driverId: number | null; plannedVehicleId: number | null;
   origin: Place | null; dest: Place | null; stops: StopTarget[]; existing: Record<string, any>;
   completedAt: number | null; scheduledAt: number | null; createdAt: number | null;
+  /** v4.0.0: the assigned driver's clearly scheduled shift windows (UTC ms). An after-the-fact match must start inside one. */
+  shiftWindows?: [number, number][] | null;
+  /** v4.0.0: dispatch_tasks.vehicle_id is set — match ONLY this truck (beats gps_vehicle_id and the schedule). */
+  vehicleLocked?: boolean;
 }
 /** A destination (or stop) visit already recorded in the DB — used so a filled task's visit can't be re-claimed by a later open task. */
 export interface ClaimedVisit { vehicleId: number; arrived: number; ownerTaskId: number; ownerStopId?: number | null }
@@ -277,7 +281,8 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
     const visitEnd = dv.departed ?? dv.arrived;
     const createdFloor = task.createdAt != null ? task.createdAt - CREATED_GRACE_MS : earliest;
     const schedFits = task.scheduledAt == null || task.scheduledAt <= visitEnd + 60 * 60_000;   // a future-scheduled task is not "after the fact"
-    if (visitEnd < createdFloor && schedFits && !claimedByOther(dv.vehicleId, dv.arrived, task.id)) return { ok: true, afterFact: true };
+    const inShift = !task.shiftWindows || task.shiftWindows.some(([a, b]) => start >= a && start < b);   // v4.0.0: never another shift's trip
+    if (visitEnd < createdFloor && schedFits && inShift && !claimedByOther(dv.vehicleId, dv.arrived, task.id)) return { ok: true, afterFact: true };
     return { ok: false, afterFact: false };
   };
   const firstBaseAfter = (v: VehicleTrack, t: number | null) =>
@@ -289,7 +294,8 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
     return s;
   };
   const vehiclesFor = (task: TaskTarget) =>
-    task.existing.gps_vehicle_id ? input.vehicles.filter((v) => v.vehicleId === Number(task.existing.gps_vehicle_id))
+    task.vehicleLocked && task.plannedVehicleId ? input.vehicles.filter((v) => v.vehicleId === task.plannedVehicleId)
+    : task.existing.gps_vehicle_id ? input.vehicles.filter((v) => v.vehicleId === Number(task.existing.gps_vehicle_id))
     : task.plannedVehicleId && !input.allowOtherTruck ? input.vehicles.filter((v) => v.vehicleId === task.plannedVehicleId)
     : input.vehicles;
   const matches: TaskMatch[] = [], unmatched: { taskId: number; reason: string }[] = [];
