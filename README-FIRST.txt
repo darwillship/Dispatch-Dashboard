@@ -192,3 +192,14 @@ New in v3.4.0 (full details: DRIVER-APP.md):
 - Location search, Task Type no longer defaults to shuttle, one driver status field.
 
 Files: index.html, shift-features.js, timesheet-features.js, truck-features.js, gps-features.js, routes-features.js, live-features.js, driver.html, sw.js, driver-manifest.webmanifest, icons/, supabase/functions/vzc-sync/ (Edge Function), SUPABASE-*.sql (migrations, incl. SUPABASE-VZC-SYNC.sql).
+
+v4.4.0 (Oct 12, 2026)
+- New Trucks page (trucks.html, "Trucks" button in the board header): every truck with live status,
+  speed, address, last report, current driver, service status (editable), today's tasks/done, detected stops.
+  Refreshes every 30 s. Engine hours / odometer are not in the live Verizon feed, so they are not shown.
+- Faster Verizon updates: new cron job "vzc-sync-live" refreshes live truck locations only (7 Verizon
+  calls, about 1 s) in the two minutes between the normal 3-minute full sync. Truck positions now update
+  every minute. Overlap guard: table vzc_sync_lock; a live run skips while a full run is going, and
+  full runs never overlap each other.
+- ROLLBACK: run   select cron.unschedule('vzc-sync-live');   (positions go back to every 3 min).
+  The function change is harmless without that job; to fully revert, redeploy the v12 vzc-sync bundle.

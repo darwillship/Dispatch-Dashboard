@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="shift-version" content="v4.4.0"><title>SHIFT Dispatch · Trucks</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#08111a;--card:#0f1a26;--line:#24384c;--muted:#8fa6ba;--txt:#e8f0f7}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:19px;margin:0;font-weight:900}header .sp{flex:1}
+a.btn,button{font:inherit;font-weight:800;font-size:12.5px;color:var(--txt);background:#14263a;border:1px solid var(--line);border-radius:9px;padding:6px 11px;cursor:pointer;text-decoration:none}
+.muted{color:var(--muted)}main{padding:14px 18px;max-width:1500px;margin:0 auto}
+.summary{font-size:13px;font-weight:800;color:var(--muted);margin-bottom:10px}.summary b{color:var(--txt)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.t{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.t.oos{opacity:.75;border-color:#7a2a2a}
+.t .top{display:flex;align-items:center;gap:8px}.t .name{font-size:18px;font-weight:950;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:12px;height:12px;border-radius:50%;background:#7e8b97;flex:0 0 auto}.dot.moving{background:#2fd47a;box-shadow:0 0 0 3px rgba(47,212,122,.2)}
+.dot.idle{background:#f2c14e}.dot.stale{background:#7e8b97;outline:2px dashed #e2b36b;outline-offset:1px}.dot.oos{background:#ff5a5a}
+.state{font-weight:900}.row{display:flex;gap:6px;font-size:13px}.row .k{color:var(--muted);min-width:78px;font-weight:700}
+.badge{font-size:11.5px;font-weight:900;border-radius:7px;padding:2px 8px;border:1px solid var(--line)}
+.badge.in_service{background:#0f2a1f;color:#7ee2a8;border-color:#1f6b45}.badge.out_of_service{background:#3a1616;color:#ffb4b4;border-color:#7a2a2a}.badge.repair_shop{background:#3a2a12;color:#ffcf8a;border-color:#7a5a2a}
+.stats{display:flex;gap:12px;font-size:12.5px;font-weight:800;color:var(--muted);border-top:1px solid #1d2c3b;padding-top:6px}.stats b{color:var(--txt)}
+dialog{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:14px;width:min(420px,94vw)}dialog::backdrop{background:rgba(0,0,0,.6)}
+dialog label{display:block;font-size:12px;font-weight:800;margin:8px 0 3px;color:var(--muted)}dialog input,dialog select{width:100%;font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:#0b1520;color:var(--txt)}
+.err{color:#ffb4b4;font-weight:800}
+@media(max-width:600px){main{padding:10px}.grid{grid-template-columns:1fr}header{padding:10px 12px}}
+body.light{--bg:#f3f6fa;--card:#fff;--line:#cfdbe7;--muted:#5b7085;--txt:#0d1824}body.light a.btn,body.light button{background:#eef4fa}body.light dialog input,body.light dialog select{background:#fff}
+</style></head>
+<body>
+<header><h1>🚛 Trucks</h1><span class="muted" id="upd">Loading…</span><span class="sp"></span><a class="btn" href="index.html">← Dispatch board</a></header>
+<main><div class="summary" id="sum"></div><div id="err" class="err"></div><div class="grid" id="grid"></div>
+<p class="muted" style="font-size:12px;margin-top:14px">Live status comes from Verizon Connect (updated about every minute). Driver = the driver scheduled on that truck right now (Truck Schedule, Daily Overrides, truck switches). Tasks and stops are for today (CT). Engine hours / odometer are not shown: they are not in the live feed we read.</p></main>
+<dialog id="dlg"><form method="dialog" id="dform"><h3 style="margin:0 0 4px" id="dtitle">Truck status</h3>
+<label for="dst">Status</label><select id="dst"><option value="in_service">In Service</option><option value="out_of_service">Out of Service</option><option value="repair_shop">At Repair Shop</option></select>
+<label for="dsince">Since (optional)</label><input id="dsince" type="date"><label for="dnote">Note (optional)</label><input id="dnote" placeholder="e.g. brakes, at the repair shop">
+<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button value="cancel" type="submit">Cancel</button><button type="button" id="dsave" style="background:#1f6b45">Save</button></div><input type="hidden" id="dvid"></form></dialog>
+<script>
+const db=supabase.createClient("https://hqhfstosclasgwgxubip.supabase.co","sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk");
+if(localStorage.getItem("shift-theme")==="light")document.body.classList.add("light");
+const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const F=new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
+const parts=t=>{let o={};for(const p of F.formatToParts(new Date(t)))o[p.type]=p.value;return o};
+const ctDate=t=>{let p=parts(t);return `${p.year}-${p.month}-${p.day}`};
+function ctAt(date,hhmm){let [h,m]=hhmm.split(":").map(Number);let g=Date.parse(`${date}T${String(h).padStart(2,"0")}:${String(m||0).padStart(2,"0")}:00Z`);for(let i=0;i<3;i++){let p=parts(g);let a=Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:00Z`);let want=Date.parse(`${date}T${String(h).padStart(2,"0")}:${String(m||0).padStart(2,"0")}:00Z`);g+=want-a}return g}
+const addDays=(d,n)=>{let x=new Date(d+"T12:00:00Z");x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
+const clk=t=>t?new Date(t).toLocaleTimeString("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit"}):"";
+const when=t=>{if(!t)return "—";let d=ctDate(t)===ctDate(Date.now())?"":new Date(t).toLocaleDateString("en-US",{timeZone:"America/Chicago",weekday:"short",month:"numeric",day:"numeric"})+" ";let m=Math.round((Date.now()-Date.parse(t))/60000);return d+clk(t)+(m<120?` (${m<1?"just now":m+" min ago"})`:"")};
+const WORKING=new Set(["working","messenger"]),SVC={in_service:"In Service",out_of_service:"Out of Service",repair_shop:"At Repair Shop"};
+let D={};
+/* same rules as the board (trucks-board.js): daily override > weekly truck schedule; a switch splits the shift; only ONE clearly scheduled driver counts */
+function shiftsFor(date){const dow=new Date(date+"T12:00:00Z").getUTCDay(),out=[];
+  const span=(s,e)=>{if(!s||!e)return [null,null];let a=ctAt(date,s.slice(0,5)),b=ctAt(date,e.slice(0,5));if(b<=a)b=ctAt(addDays(date,1),e.slice(0,5));return [a,b]};
+  for(const d of D.drivers){if(d.is_messenger)continue;
+    const row=D.sched.find(r=>Number(r.driver_id)===d.id&&String(r.work_date).slice(0,10)===date)||null;
+    const base=D.ts.filter(r=>Number(r.driver_id)===d.id&&r.active!==false&&(r.days||[]).map(Number).includes(dow));
+    const ovT=row&&row.vehicle_id!=null&&row.vehicle_source!=="auto_gps"?Number(row.vehicle_id):null;
+    const mk=(s,e,v,src)=>{let [a,b]=span(s,e);return {driverId:d.id,name:d.name,date,start:a,end:b,vehicleId:v,src}};
+    if(row){if(!WORKING.has(String(row.status||"working")))continue;
+      if(row.start_time&&row.end_time){let bv=[...new Set(base.map(b=>b.vehicle_id).filter(x=>x!=null).map(Number))];out.push(mk(row.start_time,row.end_time,ovT??(bv.length===1?bv[0]:null),ovT!=null?"override":"weekly"));continue}
+      for(const b of base)out.push(mk(b.start_time,b.end_time,ovT??(b.vehicle_id!=null?Number(b.vehicle_id):null),ovT!=null?"override":"weekly"));continue}
+    for(const b of base)out.push(mk(b.start_time,b.end_time,b.vehicle_id!=null?Number(b.vehicle_id):null,"weekly"));}
+  for(const w of D.sw.filter(x=>String(x.work_date).slice(0,10)===date)){const at=Date.parse(w.switched_at);const i=out.findIndex(s=>s.driverId===Number(w.driver_id)&&s.start!=null&&at>s.start&&at<s.end);if(i<0)continue;const s=out[i];
+    out.splice(i,1,{...s,end:at,vehicleId:w.from_vehicle_id!=null?Number(w.from_vehicle_id):s.vehicleId},{...s,start:at,vehicleId:Number(w.to_vehicle_id),src:"switch"})}
+  return out}
+const truckOf=(s,all)=>{if(s.vehicleId==null)return null;if(s.src==="weekly"&&all.some(o=>o.driverId!==s.driverId&&o.src==="override"&&o.vehicleId===s.vehicleId&&o.start!=null&&s.start!=null&&o.start<s.end&&s.start<o.end))return null;return s.vehicleId};
+function driverNow(v,SH){const t=Date.now();const c=SH.filter(s=>s.start!=null&&truckOf(s,SH)===v&&t>=s.start&&t<s.end);if(c.length===1)return {name:c[0].name,until:c[0].end};if(c.length>1)return {name:"⚠ "+c.map(x=>x.name).join(" + ")+" (overlap)"};
+  const next=SH.filter(s=>s.start!=null&&truckOf(s,SH)===v&&s.start>t).sort((a,b)=>a.start-b.start)[0];return next?{name:null,next:next.name+" at "+clk(next.start)}:null}
+function liveOf(x){if(!x)return {cls:"stale",text:"No GPS yet"};const rep=x.reported_at?Date.parse(x.reported_at):0,upd=x.updated_at?Date.parse(x.updated_at):0,now=Date.now();
+  const stale=(!upd||now-upd>10*60e3)||((x.state==="Moving"||x.state==="Idle")&&now-rep>10*60e3);
+  if(stale)return {cls:"stale",text:(x.state||"?")+" · GPS stale"};
+  if(x.state==="Moving")return {cls:"moving",text:`Moving${x.speed_mph!=null?" · "+Math.round(x.speed_mph)+" mph":""}`};
+  if(x.state==="Idle")return {cls:"idle",text:"Idling (engine on)"};return {cls:"",text:x.state==="Engine off"?"Parked":x.state||"Unknown"}}
+async function load(){
+  const today=ctDate(Date.now()),prev=addDays(today,-1),t0=new Date(ctAt(today,"00:00")).toISOString(),t1=new Date(ctAt(addDays(today,1),"00:00")).toISOString();
+  const q=await Promise.all([db.from("vehicles").select("*").order("id"),db.from("vehicle_live_location").select("*"),db.from("vehicle_status").select("*"),db.from("drivers").select("id,name,active,is_messenger").order("id"),
+    db.from("truck_schedules").select("*"),db.from("driver_schedule").select("*").gte("work_date",prev).lte("work_date",today),db.from("truck_switches").select("*").eq("active",true).gte("work_date",prev).lte("work_date",today),
+    db.from("dispatch_tasks").select("id,vehicle_id,gps_vehicle_id,status,scheduled_at,completed_at,created_at,messenger_id,combined_into_task_id").or(`scheduled_at.gte.${t0},completed_at.gte.${t0},status.neq.completed`),
+    db.from("unplanned_stops").select("id,vehicle_id,arrived_at").gte("arrived_at",t0).lt("arrived_at",t1)]);
+  const bad=q.map((r,i)=>r.error?i+": "+r.error.message:null).filter(Boolean);$("err").textContent=bad.length?"Some data could not be loaded: "+bad.join("; "):"";
+  [D.veh,D.live,D.svc,D.drivers,D.ts,D.sched,D.sw,D.tasks,D.stops]=q.map(r=>r.data||[]);D.drivers=D.drivers.map(d=>({...d,id:Number(d.id)}));
+  const SH=[...shiftsFor(prev),...shiftsFor(today)];
+  const inDay=t=>t&&t>=t0&&t<t1;
+  let cards=[],nMov=0,nOut=0;
+  for(const v of D.veh.filter(v=>v.active!==false)){const id=Number(v.id),x=D.live.find(l=>Number(l.vehicle_id)===id),sv=D.svc.find(s=>Number(s.vehicle_id)===id);const oos=sv&&sv.status!=="in_service";
+    const L=oos?{cls:"oos",text:SVC[sv.status]}:liveOf(x);if(L.cls==="moving")nMov++;if(oos)nOut++;
+    const dn=driverNow(id,SH);
+    const tt=D.tasks.filter(t=>!t.messenger_id&&!t.combined_into_task_id&&(Number(t.vehicle_id)===id||(t.vehicle_id==null&&Number(t.gps_vehicle_id)===id))&&(inDay(t.scheduled_at)||inDay(t.completed_at)||(t.status!=="completed"&&(!t.scheduled_at||t.scheduled_at<t1))));
+    const done=tt.filter(t=>t.status==="completed").length,st=D.stops.filter(u=>Number(u.vehicle_id)===id).length;
+    const st0=sv?.status||"in_service";
+    cards.push(`<div class="t ${oos?"oos":""}"><div class="top"><span class="dot ${L.cls}"></span><span class="name">${esc(v.name)}</span><button type="button" onclick="openSvc(${id})" title="Change status">⚙</button></div>
+     <div class="row"><span class="k">Status</span><span class="state">${esc(oos?"Not available":L.text)}</span></div>
+     <div class="row"><span class="k">Service</span><span><span class="badge ${st0}">${esc(SVC[st0])}</span>${sv&&sv.since?` <span class="muted">since ${esc(sv.since)}</span>`:""}${sv&&sv.note?`<div class="muted" style="font-size:12px;margin-top:2px">${esc(sv.note)}</div>`:""}</span></div>
+     <div class="row"><span class="k">Driver</span><span>${dn&&dn.name?`<b>${esc(dn.name)}</b>${dn.until?` <span class="muted">until ${clk(dn.until)}</span>`:""}`:`<span class="muted">No driver now${dn&&dn.next?" · next: "+esc(dn.next):""}</span>`}</span></div>
+     <div class="row"><span class="k">Location</span><span>${esc(x&&x.address||"—")}</span></div>
+     <div class="row"><span class="k">Last report</span><span>${esc(when(x&&x.reported_at))}</span></div>
+     <div class="stats"><span>Tasks today <b>${tt.length}</b></span><span>Done <b>${done}</b></span><span>Detected stops <b>${st}</b></span></div></div>`)}
+  $("grid").innerHTML=cards.join("");
+  $("sum").innerHTML=`<b>${cards.length}</b> trucks · <b>${nMov}</b> moving · <b>${nOut}</b> out of service`;
+  const lastUpd=D.live.map(l=>l.updated_at).filter(Boolean).sort().pop();$("upd").textContent="Verizon data "+(lastUpd?when(lastUpd):"—")+" · page refreshes every 30 s";
+}
+window.openSvc=function(id){const v=D.veh.find(x=>Number(x.id)===id),s=D.svc.find(x=>Number(x.vehicle_id)===id);$("dvid").value=id;$("dtitle").textContent="🚛 "+(v?v.name:"Truck")+" — status";$("dst").value=s?.status||"in_service";$("dsince").value=s?.since||"";$("dnote").value=s?.note||"";$("dlg").showModal()};
+$("dsave").onclick=async()=>{const id=Number($("dvid").value),st=$("dst").value;
+  const r=await db.from("vehicle_status").upsert({vehicle_id:id,status:st,since:$("dsince").value||(st!=="in_service"?ctDate(Date.now()):null),note:$("dnote").value.trim()||null,updated_by:"trucks page",updated_at:new Date().toISOString()},{onConflict:"vehicle_id"});
+  if(r.error)return alert("Could not save: "+r.error.message);$("dlg").close();load()};
+load();setInterval(()=>{if(!$("dlg").open)load()},30000);
+</script></body></html>

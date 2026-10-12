@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
   };
   const dates = Array.isArray(body?.dates) ? body.dates.filter((d: unknown) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) : undefined;
   try {
-    const summary = await runSync(env, { dryRun, dates, vehicles: Array.isArray(body?.vehicles) ? body.vehicles : undefined, source: body?.source, recompute: dryRun && body?.recompute === true,
+    const summary = await runSync(env, { liveOnly: body?.live_only === true, dryRun, dates, vehicles: Array.isArray(body?.vehicles) ? body.vehicles : undefined, source: body?.source, recompute: dryRun && body?.recompute === true,
       assignSim: dryRun && body?.assign_sim && typeof body.assign_sim === "object" ? { ignoreTrucksOf: Array.isArray(body.assign_sim.ignore_trucks_of) ? body.assign_sim.ignore_trucks_of.map(Number) : [], allDay: body.assign_sim.all_day === true } : undefined });
     return json(200, { ok: true, summary });
   } catch (e) {

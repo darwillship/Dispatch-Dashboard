@@ -20,7 +20,7 @@ const LIVE_STATE: Record<string, string> = { Moving: "Moving", Idle: "Idle", Sto
 const TASK_COLS = "id,created_at,vehicle_id,messenger_id,title,status,task_type,work_date,scheduled_at,completed_at,assigned_driver_id,pickup_name,pickup_address,delivery_name,delivery_address,is_route,combined_into_task_id,gps_departed_at,gps_arrived_at,gps_left_destination_at,gps_vehicle_id,gps_source,gps_origin_engine_on_at,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_returned_base_at,gps_match_method,gps_match_distance_m";
 const STOP_COLS = "id,task_id,seq,location_name,location_address,status,gps_arrived_at,gps_departed_at,gps_vehicle_id,gps_source,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_match_method,gps_match_distance_m";
 
-export interface SyncOptions { dryRun: boolean; dates?: string[]; vehicles?: string[]; source?: string; recompute?: boolean; assignSim?: { ignoreTrucksOf: number[]; allDay: boolean } }
+export interface SyncOptions { liveOnly?: boolean; dryRun: boolean; dates?: string[]; vehicles?: string[]; source?: string; recompute?: boolean; assignSim?: { ignoreTrucksOf: number[]; allDay: boolean } }
 export interface Env { username: string; password: string; appId: string; supabaseUrl: string; serviceKey: string; excludeDrivers: number[]; allowOtherTruck: boolean }
 
 // ---------------- Verizon client ----------------
@@ -97,7 +97,22 @@ const locAddress = (a: any) => !a ? null : a.AddressLine1?.includes(",") ? a.Add
 const addDays = (d: string, n: number) => new Date(Date.parse(d + "T12:00:00Z") + n * 86400e3).toISOString().slice(0, 10);
 
 // ---------------- main ----------------
+/** v4.4.0 overlap guard: one full run at a time; the 1-minute live-only run skips while a full run holds the lock. */
 export async function runSync(env: Env, opt: SyncOptions) {
+  if (opt.dryRun) return runSyncInner(env, opt);
+  const db = createClient(env.supabaseUrl, env.serviceKey, { auth: { persistSession: false } });
+  const name = opt.liveOnly ? "live" : "full", holder = crypto.randomUUID();
+  const lk = async (fn: string, args: any) => { const { data, error } = await db.rpc(fn, args); return error ? null : data; };
+  if (opt.liveOnly && (await lk("vzc_is_locked", { p_name: "full" })) === true) return { ok: true, live_only: true, skipped: "full run in progress" };
+  const got = await lk("vzc_try_lock", { p_name: name, p_secs: opt.liveOnly ? 50 : 170, p_holder: holder });
+  if (got === false) {
+    if (!opt.liveOnly) await db.from("vzc_sync_runs").insert({ started_at: new Date().toISOString(), finished_at: new Date().toISOString(), dry_run: false, ok: true, api_calls: 0, summary: { ok: true, skipped: "previous full run still running" } });
+    return { ok: true, live_only: !!opt.liveOnly, skipped: "previous run still running" };
+  }
+  try { return await runSyncInner(env, opt); }
+  finally { if (got === true) await lk("vzc_unlock", { p_name: name, p_holder: holder }); }
+}
+async function runSyncInner(env: Env, opt: SyncOptions) {
   const t0 = Date.now(), nowIso = new Date().toISOString();
   const db = createClient(env.supabaseUrl, env.serviceKey, { auth: { persistSession: false } });
   const vzc = new Vzc(env, db, opt.dryRun);
@@ -133,6 +148,14 @@ export async function runSync(env: Env, opt: SyncOptions) {
   if (!opt.dryRun) {
     const rows = [...loc.values()].map((x) => x.row);
     if (rows.length) { const { error } = await db.from("vehicle_live_location").upsert(rows, { onConflict: "vehicle_id" }); if (error) warnings.push("live upsert: " + error.message); }
+  }
+
+  // v4.4.0 fast path: live locations only (1 call per truck), no tracks / matching / stops
+  if (opt.liveOnly) {
+    summary.live_only = true; summary.api_calls = vzc.calls; summary.api_errors = vzc.errors; summary.ms = Date.now() - t0;
+    summary.vehicles.sort((a: any, b: any) => a.id - b.id);
+    if (!opt.dryRun) await db.from("vzc_sync_runs").insert({ started_at: nowIso, finished_at: new Date().toISOString(), dry_run: false, ok: true, api_calls: vzc.calls, summary: { ok: true, live_only: true, ms: summary.ms, api_calls: vzc.calls, api_errors: vzc.errors, warnings, http: summary.vehicles.map((v: any) => v.http) } });
+    return summary;
   }
 
   // 3) which dates

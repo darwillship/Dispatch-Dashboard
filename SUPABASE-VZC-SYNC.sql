@@ -586,3 +586,8 @@ create policy vehicle_status_insert on public.vehicle_status for insert to anon,
 create policy vehicle_status_update on public.vehicle_status for update to anon,authenticated using (true) with check (true);
 grant select,insert,update on public.vehicle_status to anon,authenticated;
 grant select,insert,update,delete on public.vehicle_status to service_role;
+
+-- v4.4.0: live-only fast path (applied Oct 12, 2026)
+-- migration v440_vzc_sync_locks: vzc_sync_lock table + vzc_try_lock / vzc_unlock / vzc_is_locked (service_role only)
+-- select cron.schedule('vzc-sync-live','1-59/3,2-59/3 * * * *',$$select public.vzc_sync_invoke(false,'{"live_only":true,"source":"pg_cron_live"}'::jsonb)$$);
+-- ROLLBACK: select cron.unschedule('vzc-sync-live');
