@@ -574,3 +574,15 @@ grant select,insert,update on public.truck_switches to anon,authenticated;
 grant usage,select on sequence public.truck_switches_id_seq to anon,authenticated;
 grant select,insert,update,delete on public.truck_switches to service_role;
 grant usage,select on sequence public.truck_switches_id_seq to service_role;
+
+-- ===== v4.2.0 (Oct 12, 2026): truck service status (additive) =====
+create table if not exists public.vehicle_status(
+ vehicle_id bigint primary key references public.vehicles(id),
+ status text not null default 'in_service' check (status in ('in_service','out_of_service','repair_shop')),
+ note text, since date, updated_by text, updated_at timestamptz not null default now());
+alter table public.vehicle_status enable row level security;
+create policy vehicle_status_read on public.vehicle_status for select to anon,authenticated using (true);
+create policy vehicle_status_insert on public.vehicle_status for insert to anon,authenticated with check (true);
+create policy vehicle_status_update on public.vehicle_status for update to anon,authenticated using (true) with check (true);
+grant select,insert,update on public.vehicle_status to anon,authenticated;
+grant select,insert,update,delete on public.vehicle_status to service_role;

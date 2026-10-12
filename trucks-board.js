@@ -63,6 +63,19 @@ const css=`
 .ts-flags{font-size:11.5px;margin:8px 0;color:#ffb4b4;font-weight:800}
 .ts-gap{font-size:11.5px;margin:6px 0;color:#e2b36b;font-weight:800}
 @media(max-width:700px){.ts-editor-row{grid-template-columns:1fr 1fr}.ts-days{grid-column:1/-1}}
+#ready{display:none}
+.ready-toggle{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;color:#9fb3c6;margin:4px 0 0}
+.ready-toggle button{font-size:11px;padding:2px 8px;border-radius:7px;border:1px solid #2b3d4f;background:transparent;color:#9fb3c6;cursor:pointer}
+.ready-toggle button.on.yes{background:#0f2a1f;border-color:#1f6b45;color:#7ee2a8}
+.ready-toggle button.on.no{background:#2a2412;border-color:#6b5a1f;color:#e2c36b}
+.task.is-ready{box-shadow:inset 3px 0 0 #2fb86f}
+.truck-card.oos{opacity:.55;filter:grayscale(.7)}
+.truck-card.oos .driver-routes{pointer-events:auto}
+.svc-badge{font-size:11px;font-weight:900;border-radius:7px;padding:2px 7px;margin-left:6px;background:#3a1616;color:#ffb4b4;border:1px solid #7a2a2a}
+.svc-badge.repair_shop{background:#3a2a12;color:#ffcf8a;border-color:#7a5a2a}
+.svc-btn{font-size:10.5px;padding:1px 6px}
+.truck-drv-pick{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;color:#9fb3c6;margin:4px 0}
+.truck-drv-pick select{width:auto;padding:3px 6px;font-size:12px;font-weight:800}
 body.light-mode .crew-strip{background:#f6f9fc!important;border-color:#c9d8e6!important}body.light-mode .crew-chip{background:#fff!important;border-color:#c9d8e6!important}body.light-mode .truck-switch-note{background:#eaf2ff!important;color:#1d4f91!important;border-color:#b9d0f0!important}
 body.light-mode .tdrv{background:#eef4fa!important;border-color:#c9d8e6!important;color:#3a5164!important}
 body.light-mode .tdrv.on{background:#ecf8f1!important;border-color:#a9d9bd!important;color:#166534!important}
@@ -89,7 +102,10 @@ const dName=id=>{let d=(drivers||[]).find(x=>Number(x.id)===Number(id));return d
 const WORKING=new Set(["working","messenger"]);
 
 /* ---------- schedule resolution ---------- */
-let SWS=[];
+let SWS=[],VST=[];
+const svcOf=v=>{let r=VST.find(x=>Number(x.vehicle_id)===Number(v));return r&&r.status&&r.status!=="in_service"?r:null};
+window.SHIFT_truckService=svcOf;
+const SVC_L={in_service:"In Service",out_of_service:"Out of Service",repair_shop:"At Repair Shop"};
 window.SHIFT_v4switches=()=>SWS;
 /* v4.1.0: a truck switch splits the driver's shift at switched_at (before = old truck, after = new truck). */
 function applySwitches(date,out){
@@ -174,9 +190,9 @@ window.SHIFT_stopName=stopName;
 async function fetchV4(){
   const prev=addDays(boardDate,-1);
   try{
-    const [a,b,c,d,e]=await Promise.all([db.from("truck_schedules").select("*").order("id"),db.from("driver_schedule").select("*").gte("work_date",prev).lte("work_date",boardDate),db.from("named_places").select("*").order("id"),db.from("messengers").select("*").order("company"),db.from("truck_switches").select("*").eq("active",true).gte("work_date",prev).lte("work_date",boardDate).order("switched_at")]);
+    const [a,b,c,d,e,f]=await Promise.all([db.from("truck_schedules").select("*").order("id"),db.from("driver_schedule").select("*").gte("work_date",prev).lte("work_date",boardDate),db.from("named_places").select("*").order("id"),db.from("messengers").select("*").order("company"),db.from("truck_switches").select("*").eq("active",true).gte("work_date",prev).lte("work_date",boardDate).order("switched_at"),db.from("vehicle_status").select("*")]);
     TS_OK=!a.error;TS=a.error?[]:(a.data||[]);if(a.error)console.warn("truck_schedules unavailable",a.error);
-    SCHED2=b.error?[]:(b.data||[]);NP=c.error?[]:(c.data||[]);MSG=d.error?[]:(d.data||[]);SWS=e.error?[]:(e.data||[]);
+    SCHED2=b.error?[]:(b.data||[]);NP=c.error?[]:(c.data||[]);MSG=d.error?[]:(d.data||[]);SWS=e.error?[]:(e.data||[]);VST=f.error?[]:(f.data||[]);
   }catch(e){console.warn("v4 data unavailable",e)}
 }
 window.SHIFT_fetchV4=fetchV4;
@@ -209,6 +225,10 @@ window.taskCard=function(t){
     }else if(t.status!=="completed"&&!t.combined_into_task_id&&!t.assigned_driver_id&&t.vehicle_id==null&&acts){
       acts.insertAdjacentHTML("beforeend",`<button class="mini" type="button" onclick="event.stopPropagation();SHIFT_openMessenger(${t.id})" title="Assign to Messenger (no truck, no GPS tracking)">🛵 Messenger</button>`);
     }
+    if(!t.assigned_driver_id&&t.vehicle_id==null&&!isMsg(t)&&t.status!=="completed"&&!t.combined_into_task_id){
+      let rdy=(t.planning_stage||"ready")!=="brainstorm";if(rdy)card.classList.add("is-ready");
+      (flags||card.querySelector(".route-footer")||card.firstElementChild)?.insertAdjacentHTML(flags?"afterend":"beforebegin",`<div class="ready-toggle" onclick="event.stopPropagation()" title="Ready to dispatch?">Ready? <button type="button" class="yes ${rdy?"on":""}" onclick="SHIFT_setReady(${t.id},true)">Yes</button><button type="button" class="no ${rdy?"":"on"}" onclick="SHIFT_setReady(${t.id},false)">No</button></div>`);
+    }
     let v=taskTruck(t);
     if(v!=null&&!isMsg(t)&&t.status!=="completed"&&!t.combined_into_task_id){
       let sched=[...new Set(SH.filter(s=>s.date===boardDate&&s.working&&truckOf(s,SH)===v).map(s=>s.driverId))];
@@ -218,6 +238,10 @@ window.taskCard=function(t){
     }
     return tp.innerHTML;
   }catch(e){console.warn("v4 card",e);return html}
+};
+window.SHIFT_setReady=async function(id,yes){
+  let t=tasks.find(x=>x.id===id);if(!t)return;let want=yes?"ready":"brainstorm";if((t.planning_stage||"ready")===want)return;
+  let r=await db.from("dispatch_tasks").update({planning_stage:want}).eq("id",id);if(r.error)return alert("Could not save: "+r.error.message);await load();
 };
 window.SHIFT_setTaskDriver=async function(id,val){
   if(val==="other"){let names=(drivers||[]).map(d=>d.id+" = "+d.name).join("\n");let x=prompt("Driver number:\n"+names);if(!x)return render();val=x.trim()}
@@ -250,7 +274,7 @@ function stopRow(u){
 }
 const isToday=()=>boardDate===ymd(new Date());
 function truckCard(v){
-  const vid=Number(v.id),now=Date.now();
+  const vid=Number(v.id),now=Date.now(),svc=svcOf(vid);
   let mine=tasks.filter(t=>!t.combined_into_task_id||true).filter(t=>taskTruck(t)===vid&&!isMsg(t));
   let active=mine.filter(t=>t.status!=="completed").sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
   let done=mine.filter(t=>t.status==="completed").sort((a,b)=>new Date(b.completed_at||0)-new Date(a.completed_at||0));
@@ -258,8 +282,10 @@ function truckCard(v){
   let chips=shifts.map(s=>{let on=isToday()&&s.start!=null&&now>=s.start&&now<s.end;let t=s.noTimes?(s.switchIn?"from "+clk(s.start):"until "+clk(s.end)):s.start!=null?`${clk(s.start)}–${clk(s.end)}`:"no shift times";
     let tag=s.date!==boardDate?` (${DOW[new Date(s.date+"T12:00:00Z").getUTCDay()]} shift)`:"";let src=s.vehicleSource==="override"?" · today only":"";
     let swb=on&&isToday()&&!s.switchOut?`<button type="button" class="mini tdrv-sw" onclick="event.stopPropagation();SHIFT_openSwitch(${s.driverId},${vid})" title="${esc(s.name)} is changing trucks — move their open tasks to the new truck">⇄ Switch truck</button>`:"";
-    return `<span class="tdrv ${on?"on":""}" title="${esc(s.name+": "+t+tag+(s.vehicleSource==="override"?" — Daily Override":s.vehicleSource==="switch"?" — truck switch":" — Truck Schedule")+(on?" — on shift now":""))}">${esc(s.name)} <span class="tdrv-t">${esc(t)}${esc(tag)}${esc(src)}</span>${swb}</span>`}).join("")||`<span class="tdrv none" onclick="openDriverSchedule()" title="No driver scheduled on this truck for this date — set it in Driver Schedule → Truck Schedule">No driver scheduled</span>`;
-  let cf=conflicts(boardDate,SH).filter(c=>c.v.includes(vid)).map(c=>`<div class="truck-conflict" title="Two schedules overlap — stops in this time show Driver unknown until it is fixed (Driver Schedule)">⚠ ${esc(c.text)}</div>`).join("");
+    return `<span class="tdrv ${on?"on":""}" title="${esc(s.name+": "+t+tag+(s.vehicleSource==="override"?" — Daily Override":s.vehicleSource==="switch"?" — truck switch":" — Truck Schedule")+(on?" — on shift now":""))}">${esc(s.name)} <span class="tdrv-t">${esc(t)}${esc(tag)}${esc(src)}</span>${swb}</span>`}).join("")||(svc?"":`<span class="tdrv none" onclick="openDriverSchedule()" title="No driver scheduled on this truck for this date — set it in Driver Schedule → Truck Schedule">No driver scheduled</span>`);
+  let curIds=[...new Set(shifts.filter(s=>s.date===boardDate).map(s=>s.driverId))];
+  let pick=svc?"":`<div class="truck-drv-pick" title="Today's driver for this truck — saved as a Daily Override for ${esc(boardDate)} (weekly Truck Schedule is not changed)">👤 Driver for ${esc(boardDate===ymd(new Date())?"today":boardDate)}: <select onchange="SHIFT_pickTruckDriver(${vid},this.value,this)"><option value="">${curIds.length===1?"":curIds.length?"(several — pick one)":"— pick —"}</option>${(drivers||[]).filter(d=>d.active!==false).map(d=>`<option value="${d.id}" ${curIds.length===1&&curIds[0]===Number(d.id)?"selected":""}>${esc(d.name)}</option>`).join("")}</select></div>`;
+  let cf=svc?"":conflicts(boardDate,SH).filter(c=>c.v.includes(vid)).map(c=>`<div class="truck-conflict" title="Two schedules overlap — stops in this time show Driver unknown until it is fixed (Driver Schedule)">⚠ ${esc(c.text)}</div>`).join("");
   let swn=SWS.filter(w=>String(w.work_date).slice(0,10)===boardDate&&(Number(w.to_vehicle_id)===vid||Number(w.from_vehicle_id)===vid)).map(w=>{let into=Number(w.to_vehicle_id)===vid;let n=(w.moved_task_ids||[]).length;
     return `<div class="truck-switch-note" title="${esc(n+" open task(s) moved"+(w.note?" — "+w.note:""))}"><span>⇄ ${esc(dName(Number(w.driver_id)))} ${into?"switched here from "+esc(vName(Number(w.from_vehicle_id)))+" at "+clk(w.switched_at):"switched to "+esc(vName(Number(w.to_vehicle_id)))+" at "+clk(w.switched_at)}</span>${into?`<button type="button" class="mini" onclick="SHIFT_undoSwitch(${w.id})" title="Undo this switch (moved tasks that are still open go back)">Undo</button>`:""}</div>`}).join("");
   let lb=liveBits(vid);
@@ -273,7 +299,7 @@ function truckCard(v){
   let ups=stopsFor(vid);
   let sk="s"+vid,sOpen=(window.SHIFT_openFolds||{})[sk]?"open":"";
   let upHtml=ups.length?`<details class="truck-stops" ${sOpen} ontoggle="(window.SHIFT_openFolds=window.SHIFT_openFolds||{})['${sk}']=this.open" title="Stops detected automatically from Verizon GPS that are not on any task. Recorded automatically; they never count toward completion."><summary>📍 ${ups.length} detected stop${ups.length>1?"s":""} · last ${esc(stopName(ups[ups.length-1]))} ${esc(clk(ups[ups.length-1].arrived_at))} <span class="muted">(tap to show)</span></summary>${ups.map(stopRow).join("")}</details>`:"";
-  return `<section class="driver truck-card" data-vehicle="${vid}"><div class="driver-head"><div><span class="driver-name truck-name">🚛 ${esc(v.name)}</span> ${lb.chip}${lb.addr?`<div class="truck-loc" title="${esc(lb.addr)}">📍 ${esc(lb.addr)}</div>`:""}</div><div class="driver-head-tools"><span class="count" title="Active / total today">${active.length}${done.length?"/"+mine.length:""}</span></div></div><div class="truck-drivers">${chips}</div>${swn}${cf}${ts}${stats}<div class="driver-routes" data-truck="${vid}" data-drop-truck="${vid}">${active.length?active.map(taskCard).join(""):`<div class="empty">${done.length?"All done · drop a task here":"Drop a task here"}</div>`}${fold}</div>${upHtml}</section>`;
+  return `<section class="driver truck-card ${svc?"oos":""}" data-vehicle="${vid}"><div class="driver-head"><div><span class="driver-name truck-name">🚛 ${esc(v.name)}</span>${svc?`<span class="svc-badge ${esc(svc.status)}" title="${esc((svc.note||"")+(svc.since?" (since "+svc.since+")":""))}">${svc.status==="repair_shop"?"🔧":"⛔"} ${esc(SVC_L[svc.status])}${svc.since?" since "+esc(svc.since.slice(5).replace("-","/")):""}</span>`:""} ${lb.chip}${lb.addr?`<div class="truck-loc" title="${esc(lb.addr)}">📍 ${esc(lb.addr)}</div>`:""}</div><div class="driver-head-tools"><button type="button" class="mini svc-btn" onclick="SHIFT_openSvc(${vid})" title="Truck status: In Service / Out of Service / At Repair Shop">⚙</button><span class="count" title="Active / total today">${active.length}${done.length?"/"+mine.length:""}</span></div></div><div class="truck-drivers">${chips}</div>${pick}${swn}${cf}${ts}${stats}<div class="driver-routes" ${svc?`data-oos="${vid}"`:`data-truck="${vid}" data-drop-truck="${vid}"`}>${active.length?active.map(taskCard).join(""):`<div class="empty">${svc?esc(SVC_L[svc.status])+" — not taking tasks":done.length?"All done · drop a task here":"Drop a task here"}</div>`}${fold}</div>${upHtml}</section>`;
 }
 function crewStrip(){
   let dsToday=SH.filter(s=>s.date===boardDate);
@@ -308,12 +334,14 @@ function messengersCard(){
 window.render=function(){
   SH=around(boardDate);
   let free=t=>!t.assigned_driver_id&&t.vehicle_id==null&&!isMsg(t);
-  let brain=tasks.filter(t=>free(t)&&(t.planning_stage||"ready")==="brainstorm"),ready=tasks.filter(t=>free(t)&&(t.planning_stage||"ready")!=="brainstorm");
+  let plan=tasks.filter(free).sort((a,b)=>((b.planning_stage||"ready")!=="brainstorm")-((a.planning_stage||"ready")!=="brainstorm")||(a.sort_order||0)-(b.sort_order||0)),brain=plan,ready=[];
+  let rl=$("ready")?.closest(".lane");if(rl)rl.style.display="none";
+  let rp=$("readyPaste"),bz=$("brainstorm");if(rp&&bz&&rp.nextElementSibling!==bz)bz.parentNode.insertBefore(rp,bz);
   $("brainstorm").innerHTML=brain.length?brain.map(taskCard).join(""):'<div class="empty">Drop ideas here<br>Details can be incomplete.</div>';
   $("ready").innerHTML=ready.length?ready.map(taskCard).join(""):'<div class="empty">Drag planned work here<br>when it is ready to dispatch.</div>';
   $("brainCount").textContent=brain.length;$("readyCount").textContent=ready.length;
   let vs=vehicles().filter(v=>v.active!==false).slice().sort((a,b)=>Number(a.id)-Number(b.id));
-  $("drivers").innerHTML=crewStrip()+unassignedCard()+vs.map(truckCard).join("")+messengersCard();
+  $("drivers").innerHTML=unassignedCard()+vs.map(truckCard).join("")+messengersCard();
   ["fleetStrip","unplannedStrip","assignStrip"].forEach(id=>{let e=$(id);if(e)e.remove()});
   try{updateMetrics()}catch(_){}
   bindDrag();
@@ -326,10 +354,11 @@ window.bindDrag=function(){
   document.querySelectorAll(".dropzone,.driver-routes,.crew-chip[data-driver]").forEach(z=>{z.ondragover=e=>{e.preventDefault();z.classList.add("over")};z.ondragleave=()=>z.classList.remove("over");z.ondrop=async e=>{e.preventDefault();z.classList.remove("over");if(!dragId)return;let target=e.target.closest(".task"),before=target?Number(target.dataset.id):null;await dropOn(z,dragId,before)}});
 };
 async function dropOn(z,id,before){
+  if(z.dataset&&z.dataset.oos){let sv=svcOf(Number(z.dataset.oos));return alert(`${vName(Number(z.dataset.oos))} is ${sv?SVC_L[sv.status]:"out of service"} — it can't take tasks. Set it back to In Service with ⚙ first.`)}
   if(z.dataset.truck)return moveTruck(id,Number(z.dataset.truck),before);
   if(z.dataset.messenger)return SHIFT_openMessenger(id);
   if(z.dataset.driver){let t=tasks.find(x=>x.id===id);if(t&&(t.vehicle_id!=null||isMsg(t))){let r=await db.from("dispatch_tasks").update({vehicle_id:null,messenger_id:null}).eq("id",id);if(r.error)return alert("Could not move: "+r.error.message)}return moveDriver(id,Number(z.dataset.driver),before)}
-  if(z.dataset.stage){let t=tasks.find(x=>x.id===id);if(t&&(t.vehicle_id!=null||isMsg(t))){let r=await db.from("dispatch_tasks").update({vehicle_id:null,messenger_id:null}).eq("id",id);if(r.error)return alert("Could not move: "+r.error.message)}return moveStage(id,z.dataset.stage,before)}
+  if(z.dataset.stage){let t=tasks.find(x=>x.id===id);let stg=z.dataset.stage;if(stg==="brainstorm"&&t&&!t.assigned_driver_id&&t.vehicle_id==null&&!isMsg(t)&&(t.planning_stage||"ready")==="ready")stg="ready";if(t&&(t.vehicle_id!=null||isMsg(t))){let r=await db.from("dispatch_tasks").update({vehicle_id:null,messenger_id:null}).eq("id",id);if(r.error)return alert("Could not move: "+r.error.message)}return moveStage(id,stg,before)}
 }
 window.SHIFT_dropOn=dropOn;
 /** driver for a task put on truck v: keep its driver if scheduled on v that day; else the one on v at the task time / now; else the only driver on v. */
@@ -368,6 +397,42 @@ async function moveTruck(id,v,before){
 }
 window.SHIFT_moveTruck=moveTruck;
 function toast(msg){let e=document.createElement("div");e.textContent=msg;e.style.cssText="position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0f2a1f;color:#7ee2a8;border:1px solid #1f6b45;border-radius:10px;padding:8px 14px;font-weight:800;font-size:13px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.35)";document.body.appendChild(e);setTimeout(()=>e.remove(),4500)}
+
+/* ---------- v4.2.0: truck service status ---------- */
+function svcModal(){
+  let m=$("svcModal");if(m)return m;
+  m=document.createElement("div");m.id="svcModal";m.className="modal";
+  m.innerHTML=`<div class="dialog msg-dialog" onclick="event.stopPropagation()"><h3 style="margin:0 0 6px" id="svcTitle">Truck status</h3>
+  <label for="svcStatus">Status</label><select id="svcStatus"><option value="in_service">In Service</option><option value="out_of_service">Out of Service</option><option value="repair_shop">At Repair Shop</option></select>
+  <label for="svcSince">Since (optional)</label><input id="svcSince" type="date"><label for="svcNote">Note (optional)</label><input id="svcNote" placeholder="e.g. brakes, at Joe's Truck Repair">
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button type="button" class="mini" onclick="$('svcModal').classList.remove('show')">Cancel</button><button type="button" class="btn primary" onclick="SHIFT_saveSvc()">Save</button></div><input type="hidden" id="svcVid"></div>`;
+  m.onclick=()=>m.classList.remove("show");document.body.appendChild(m);return m;
+}
+window.SHIFT_openSvc=function(v){let m=svcModal(),r=VST.find(x=>Number(x.vehicle_id)===Number(v));$("svcVid").value=v;$("svcTitle").textContent="🚛 "+vName(v)+" — status";$("svcStatus").value=r?.status||"in_service";$("svcSince").value=r?.since||"";$("svcNote").value=r?.note||"";m.classList.add("show")};
+window.SHIFT_saveSvc=async function(){
+  let v=Number($("svcVid").value),st=$("svcStatus").value;
+  let open=tasks.filter(t=>taskTruck(t)===v&&!isMsg(t)&&t.status!=="completed").length;
+  if(st!=="in_service"&&open&&!confirm(`${vName(v)} still has ${open} open task(s). They stay on it until you move them. Continue?`))return;
+  let r=await db.from("vehicle_status").upsert({vehicle_id:v,status:st,since:$("svcSince").value||(st!=="in_service"?ymd(new Date()):null),note:$("svcNote").value.trim()||null,updated_by:"dashboard",updated_at:new Date().toISOString()},{onConflict:"vehicle_id"});
+  if(r.error)return alert("Could not save the truck status: "+r.error.message);
+  $("svcModal").classList.remove("show");await load();
+};
+/* ---------- v4.2.0: pick today's driver on a truck card = Daily Override (driver_schedule.vehicle_id) ---------- */
+window.SHIFT_pickTruckDriver=async function(v,val,sel){
+  if(!val)return;let did=Number(val);
+  let other=[...new Set(SH.filter(s=>s.date===boardDate&&s.working&&s.driverId===did).map(s=>truckOf(s,SH)).filter(x=>x!=null&&x!==v))];
+  let onV=[...new Set(SH.filter(s=>s.date===boardDate&&s.working&&s.driverId!==did&&truckOf(s,SH)===v).map(s=>s.name))];
+  let warn=[];if(other.length)warn.push(`⚠ ${dName(did)} is also scheduled on ${other.map(vName).join(", ")} today — this moves them to ${vName(v)} for the day (overlap warning shows if times still clash).`);
+  if(onV.length)warn.push(`${onV.join(", ")} ${onV.length>1?"are":"is"} scheduled on ${vName(v)} today; with a Daily Override ${dName(did)} takes the truck for ${boardDate}.`);
+  if(!confirm(`Make ${dName(did)} the driver of ${vName(v)} on ${boardDate}?\nSaved as a Daily Override (the weekly Truck Schedule is not changed).${warn.length?"\n\n"+warn.join("\n"):""}`)){render();return}
+  let ex=await db.from("driver_schedule").select("id,status").eq("work_date",boardDate).eq("driver_id",did).maybeSingle();
+  if(ex.error)return alert("Could not read the schedule: "+ex.error.message);
+  let r=ex.data?await db.from("driver_schedule").update({vehicle_id:v,vehicle_source:"manual",updated_at:new Date().toISOString()}).eq("id",ex.data.id)
+               :await db.from("driver_schedule").insert({work_date:boardDate,driver_id:did,status:"working",vehicle_id:v,vehicle_source:"manual"});
+  if(r.error)return alert("Could not save the driver: "+r.error.message);
+  if(ex.data&&ex.data.status&&!WORKING.has(String(ex.data.status)))alert(`Note: ${dName(did)} is marked ${ex.data.status} for this date. Change it in Driver Schedule → Daily Overrides if they are working.`);
+  await load();
+};
 
 /* ---------- v4.1.0: mid-day truck switch ---------- */
 function swModal(){

@@ -1,3 +1,10 @@
+SHIFT Dispatch v4.2.0 (Oct 12, 2026)
+- Today's crew strip removed (availability: Driver Schedule -> Daily Overrides). "Driver, no truck yet" card only when needed.
+- Ready to Assign column removed: one Plan & Prepare column; cards have Ready? Yes/No (planning_stage ready/brainstorm; old Ready to Assign tasks show Ready = Yes, listed first). Quick paste box moved above Plan & Prepare.
+- Truck status (⚙ on each truck card): In Service / Out of Service / At Repair Shop + note + since date (table public.vehicle_status). Out-of-service trucks are greyed with a badge, refuse drops, no driver picker, no overlap / "No driver scheduled" warnings.
+- Driver picker on each truck card: saves a Daily Override (driver_schedule.vehicle_id, vehicle_source=manual) for that date; warns if the driver is on another truck or someone else is scheduled on it.
+- vzc-sync v12: detected stops of yesterday are saved too while the cron still covers yesterday (before noon) — fixes stops that start late evening and run past midnight never being saved. Dry runs add summary.dates[].stop_audit (every Verizon stop with its verdict).
+
 SHIFT Dispatch v4.1.0 (Oct 12, 2026) — board cleanup
 - Messenger button only on tasks still in Plan & Prepare / Ready to Assign (no driver, no truck).
 - Driver names on truck cards bigger and bolder; the one on shift now is largest (green).

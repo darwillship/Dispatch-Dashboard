@@ -193,7 +193,8 @@ export async function runSync(env: Env, opt: SyncOptions) {
   const runMatches = new Map<string, M.TaskMatch[]>();
 
   // 5) unplanned stops (v3.10.0): today's date (or explicitly requested dates). Saved only once the table exists.
-  const upDates = new Set(dates.filter((d) => d === today || !!opt.dates?.length));
+  // v4.2.0: also yesterday (the cron includes it before noon) so a stop that runs past midnight is still saved
+  const upDates = new Set(dates.filter((d) => d === today || d === addDays(today, -1) || !!opt.dates?.length));
   let upTable = false;
   if (upDates.size) {
     const { error } = await db.from("unplanned_stops").select("id").limit(1);
@@ -468,6 +469,7 @@ export async function runSync(env: Env, opt: SyncOptions) {
       const counts: Record<string, number> = {};
       for (const c of judged) counts[c.verdict] = (counts[c.verdict] || 0) + 1;
       dsum.unplanned_checked.push({ truck: tr.name, home: home?.address || null, stops: counts });
+      if (opt.dryRun) (dsum.stop_audit ||= []).push(...judged.map((c) => ({ truck: tr.name, v, arrived: M.ctClock(c.arrived), left: M.ctClock(c.departed), off_min: c.offMinutes, still_min: c.stillMinutes, verdict: c.verdict, planned: c.planned || null, addr: c.addr || null })));
       for (const c of judged.filter((c) => c.verdict === "idle")) dsum.unplanned_idle.push({ truck: tr.name, address: c.addr, arrived: M.ctClock(c.arrived), left: M.ctClock(c.departed), still_min: c.stillMinutes });
       const truckDrivers = [...new Set(live.filter((t) => vehOf(t) === v && t.assigned_driver_id).map((t) => Number(t.assigned_driver_id)))];
       for (const c of judged.filter((c) => c.verdict === "unplanned")) {
