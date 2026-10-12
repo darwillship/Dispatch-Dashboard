@@ -64,6 +64,18 @@ const css=`
 .ts-gap{font-size:11.5px;margin:6px 0;color:#e2b36b;font-weight:800}
 @media(max-width:700px){.ts-editor-row{grid-template-columns:1fr 1fr}.ts-days{grid-column:1/-1}}
 #ready{display:none}
+/* v4.2.1 layout: Plan & Prepare + trucks grid (Ready to Assign column removed) */
+.board{grid-template-columns:300px minmax(0,1fr)!important}
+.board>.drivers-lane{grid-column:2!important;min-width:0!important}
+#drivers.drivers{display:grid!important;column-count:auto!important;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))!important;gap:10px!important;align-items:start!important}
+#drivers.drivers>.driver{min-width:0;break-inside:avoid;margin:0!important;width:auto!important}
+.truck-card .driver-head{flex-wrap:wrap;gap:6px}
+.truck-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.truck-loc{max-width:100%}
+.truck-drv-pick{flex-wrap:wrap}.truck-drv-pick select{flex:1 1 100%;max-width:100%;width:100%}
+.truck-card .task{max-width:100%;min-width:0}
+@media(max-width:900px){.board{grid-template-columns:1fr!important}.board>.drivers-lane{grid-column:1!important}}
+@media(max-width:700px){#drivers.drivers{grid-template-columns:1fr!important}}
 .ready-toggle{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;color:#9fb3c6;margin:4px 0 0}
 .ready-toggle button{font-size:11px;padding:2px 8px;border-radius:7px;border:1px solid #2b3d4f;background:transparent;color:#9fb3c6;cursor:pointer}
 .ready-toggle button.on.yes{background:#0f2a1f;border-color:#1f6b45;color:#7ee2a8}

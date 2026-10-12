@@ -1,3 +1,5 @@
+SHIFT Dispatch v4.2.1 (Oct 12, 2026): layout fix — Plan & Prepare 300px + truck cards in a wrapping grid (min 280px each); driver picker full-width on its own line; single column under 900px.
+
 SHIFT Dispatch v4.2.0 (Oct 12, 2026)
 - Today's crew strip removed (availability: Driver Schedule -> Daily Overrides). "Driver, no truck yet" card only when needed.
 - Ready to Assign column removed: one Plan & Prepare column; cards have Ready? Yes/No (planning_stage ready/brainstorm; old Ready to Assign tasks show Ready = Yes, listed first). Quick paste box moved above Plan & Prepare.
