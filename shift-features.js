@@ -2,7 +2,7 @@
    Loaded after the main inline script in index.html; reuses its globals (db, tasks, allTasks, drivers, boardDate, LOC, savedLocations, load, render…).
    Production-safety rule: this file only performs single-row writes (one task / one reminder / one schedule row) or new inserts. No bulk clears. */
 (function(){
-const SHIFT_VERSION="v4.0.0";
+const SHIFT_VERSION="v4.0.1";
 window.SHIFT_VERSION=SHIFT_VERSION;
 const HOME=["Darwill McCook","8701 47th St Ste C, McCook, IL 60525"]; // most common origin in History (82 of 112 routes)
 const ALERT_RE=/\[SHIFT-DRIVER task:(\d+) (missed|refused)\]/;
@@ -44,7 +44,7 @@ const st=document.createElement("style");st.textContent=css;document.head.append
 
 /* ---------- small helpers ---------- */
 function driverById(id){return drivers.find(d=>Number(d.id)===Number(id))}
-function tm(v){return v?new Date(v).toLocaleString([],{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"ASAP"}
+function tm(v){return v?new Date(v).toLocaleString([],{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"No time set"}
 async function probeEvents(){if(eventsTable!==null)return eventsTable;try{let r=await db.from("dispatch_events").select("id").limit(1);eventsTable=!r.error}catch(_){eventsTable=false}return eventsTable}
 async function logEvent(taskId,driverId,event,detail){try{if(!(await probeEvents()))return;await db.from("dispatch_events").insert({task_id:taskId,driver_id:driverId,event,detail:detail||null})}catch(_){}}
 

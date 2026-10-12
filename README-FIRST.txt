@@ -1,3 +1,5 @@
+SHIFT Dispatch v4.0.1 (Oct 12, 2026): a task without a time now shows "No time set" (grey) instead of an orange "ASAP" that looked like a priority. Priority was always saved correctly; the HIGH badge is the only urgency marker. Quick paste still turns the word ASAP/urgent/rush into High priority.
+
 SHIFT Dispatch v4.0.0 (Oct 12, 2026)
 ====================================
 Board = one card per truck (7 Verizon trucks): tasks, live Verizon status + location, the drivers scheduled on it

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SHIFT Dispatch</title><meta name="shift-version" content="v4.0.0"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<title>SHIFT Dispatch</title><meta name="shift-version" content="v4.0.1"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#080d14;--panel:#0e1621;--panel2:#111c29;--card:#131f2d;--ink:#f5f7fa;--muted:#8fa0b5;--line:#203246;--blue:#0a84ff;--cyan:#00c6ff;--green:#22c55e;--amber:#ffc107;--purple:#986cff;--red:#ef5350;--steel:#a5b0be;--shadow:0 14px 38px rgba(0,0,0,.25)}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#102c4d 0,#080d14 38%,#060a10 100%);color:var(--ink);font:14px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
@@ -965,7 +965,7 @@ body.light-mode input[type="date"]::-webkit-calendar-picker-indicator{filter:non
 .route-status.in_progress{color:#ffc23d;background:rgba(255,176,32,.12)}
 .route-status.completed{color:#75e79a;background:rgba(105,223,145,.12)}
 .auto-hint{font-size:8.5px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;margin-left:4px;padding:2px 5px;border-radius:5px;color:#9fd3ff;background:rgba(10,132,255,.10);border:1px dashed rgba(102,177,255,.45);cursor:help}
-.asap-chip{font-weight:900;color:#ffc23d}
+.asap-chip{font-weight:700;color:#8fa6ba;font-style:italic}
 .sched-pair{display:flex;gap:6px;align-items:center}.sched-pair input{flex:1;min-width:0}.opt-hint{font-weight:500;opacity:.7;text-transform:none}
 .route-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
 .route-footer .task-actions{margin:0!important}
@@ -1266,7 +1266,7 @@ body:not(.light-mode) .task.task-is-completed{background:linear-gradient(145deg,
 <div id="pickupCustom" class="custom-location hidden"><input id="pickupCustomName" placeholder="Customer / location name"><input id="pickupCustomAddress" placeholder="Full pickup address"><label class="save-location"><input type="checkbox" id="pickupSave"> Save this location for future routes</label></div><div id="pickupPreview" class="location-preview">Select a pickup location to see the address.</div></div>
 <div><label>Delivery *</label><input class="loc-search" id="deliverySearch" placeholder="Search delivery…" autocomplete="off"><select id="delivery" required onchange="toggleCustomLocation('delivery')"></select>
 <div id="deliveryCustom" class="custom-location hidden"><input id="deliveryCustomName" placeholder="Customer / location name"><input id="deliveryCustomAddress" placeholder="Full delivery address"><label class="save-location"><input type="checkbox" id="deliverySave"> Save this location for future routes</label></div><div id="deliveryPreview" class="location-preview">Select a delivery location to see the address.</div></div>
-<div><label>Date · Time <span class="opt-hint">(time optional — blank = ASAP)</span></label><div class="sched-pair"><input id="schedDate" type="date" oninput="syncSched()"><input id="schedTime" type="time" oninput="syncSched()" title="Leave blank for ASAP / no set time"><button type="button" class="mini" onclick="$('schedTime').value='';syncSched()" title="Clear the time">ASAP</button></div><input id="scheduled" type="hidden"></div><div><label>Priority</label><select id="priority"><option>normal</option><option>high</option><option>low</option></select></div>
+<div><label>Date · Time <span class="opt-hint">(time optional — blank = no time set)</span></label><div class="sched-pair"><input id="schedDate" type="date" oninput="syncSched()"><input id="schedTime" type="time" oninput="syncSched()" title="Leave blank for no set time"><button type="button" class="mini" onclick="$('schedTime').value='';syncSched()" title="Clear the time">No time</button></div><input id="scheduled" type="hidden"></div><div><label>Priority</label><select id="priority"><option>normal</option><option>high</option><option>low</option></select></div>
 <div><label>Client / Job</label><input id="job"></div><div><label>Material</label><input id="material"></div>
 <div><label>Pallets</label><input id="pallets" type="number" min="0"></div><div><label>Task Type</label><select id="type" required><option value="">Choose pickup or delivery…</option><option value="pickup">pickup</option><option value="delivery">delivery</option><option value="shuttle">shuttle</option><option value="other">other</option></select></div>
 <div class="full"><label>Instructions</label><textarea id="notes"></textarea></div></div>
@@ -1279,7 +1279,7 @@ const LOC=[["ALG","1053 N Schmidt Rd, Romeoville, IL 60446"],["ENRU","1000 Windh
 let tasks=[],allTasks=[],drivers=[],savedLocations=[],driverSchedule=[],weeklyDriverSchedule=[],dragId=null;
 const $=id=>document.getElementById(id), esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 function ymd(v){let d=new Date(v);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")}
-function fmt(v){return v?new Date(v).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"ASAP"}
+function fmt(v){return v?new Date(v).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"No time set"}
 /* v3.12.0: date + optional time. #scheduled (hidden) keeps the old "YYYY-MM-DDTHH:MM" contract; "" = no time (ASAP). */
 function syncSched(){let d=$("schedDate").value,t=$("schedTime").value;$("scheduled").value=d&&t?d+"T"+t:""}
 function setSched(v){v=v?String(v):"";$("schedDate").value=v.slice(0,10)||boardDate;$("schedTime").value=v.length>10?v.slice(11,16):"";syncSched()}
@@ -1296,7 +1296,7 @@ function taskCard(t){
  return `<article class="task route-card-clean" draggable="true" data-id="${t.id}">
  <div class="route-card-head"><span class="route-type ${typeKey}">${typeLabel}</span><span class="grip">⋮⋮</span></div>
  <div class="route">${esc(t.pickup_name)} → ${esc(t.delivery_name)}</div>
- <div class="meta">${t.scheduled_at?fmt(t.scheduled_at):'<span class="asap-chip">ASAP</span>'}${t.pallet_qty!=null?" · "+t.pallet_qty+" pallets":""}</div>
+ <div class="meta">${t.scheduled_at?fmt(t.scheduled_at):'<span class="asap-chip">No time set</span>'}${t.pallet_qty!=null?" · "+t.pallet_qty+" pallets":""}</div>
  ${t.job_client?`<div class="route-job">${esc(t.job_client)}</div>`:""}
  <div class="route-flags">${high}${status}</div>
  <div class="route-footer"><div class="task-actions"><button class="mini" onclick="event.stopPropagation();editTask(${t.id})">Edit</button><button class="mini danger" onclick="event.stopPropagation();removeTask(${t.id})">Delete</button></div>${compactStatusControl(t)}</div>
@@ -1725,7 +1725,7 @@ async function quickAvailability(driverId,status){
  if(r.error)return alert(r.error.message);
  await load();
 }
-</script><script src="shift-features.js?v=4.0.0"></script><script src="timesheet-features.js?v=4.0.0"></script><script src="truck-features.js?v=4.0.0"></script><script src="gps-features.js?v=4.0.0"></script><script src="routes-features.js?v=4.0.0"></script><script src="live-features.js?v=4.0.0"></script><script src="unplanned-features.js?v=4.0.0"></script><script src="trucks-board.js?v=4.0.0"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
+</script><script src="shift-features.js?v=4.0.1"></script><script src="timesheet-features.js?v=4.0.1"></script><script src="truck-features.js?v=4.0.1"></script><script src="gps-features.js?v=4.0.1"></script><script src="routes-features.js?v=4.0.1"></script><script src="live-features.js?v=4.0.1"></script><script src="unplanned-features.js?v=4.0.1"></script><script src="trucks-board.js?v=4.0.1"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
  <div class="shift-cal" role="dialog" aria-modal="true" aria-label="Select date">
   <div class="shift-cal-head">
    <button type="button" onclick="changeCalMonth(-1)">‹</button>

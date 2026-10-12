@@ -64,7 +64,7 @@ const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 function ymd(v){let d=new Date(v);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")}
-function hm(v){return v?new Date(v).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"ASAP"}
+function hm(v){return v?new Date(v).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"No time set"}
 function fmtT(v){if(!v)return "";let [h,m]=v.slice(0,5).split(":").map(Number);return `${h%12||12}:${String(m).padStart(2,"0")} ${h>=12?"PM":"AM"}`}
 const qs=new URLSearchParams(location.search);
 let driverId=Number(qs.get("d")||qs.get("driver")||localStorage.getItem("shift-driver-id")||0)||null;
