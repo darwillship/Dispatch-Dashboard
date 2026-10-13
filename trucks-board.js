@@ -665,6 +665,7 @@ const css43=`
 #drivers.drivers{display:grid!important;column-count:auto!important;grid-template-columns:repeat(auto-fill,minmax(270px,1fr))!important;gap:0 10px!important;grid-auto-rows:2px;align-items:start!important}
 #drivers.drivers>*{margin-bottom:10px!important}
 .plan-msg{margin-top:6px}
+.eta-line{font-size:12px;font-weight:800;color:#5cc8ff;margin:3px 0 2px}body.light-mode .eta-line{color:#0b6fb8}
 /* v4.4.1 */
 :has(>* details.more[open]),:has(details.more[open]){transform:none!important;filter:none!important;will-change:auto!important}
 .task:has(details.more[open]):hover{transform:none!important}
@@ -782,8 +783,13 @@ window.taskCard=function(t){
     if(acts){const mb=[...acts.querySelectorAll("button")].find(b=>/Messenger/.test(b.textContent)&&!/Edit/.test(b.textContent));if(mb){mb.remove();if(freeT){mb.classList.add("plan-msg");const row=document.createElement("div");row.className="plan-msg-row";row.appendChild(mb);(card.querySelector(".ready-toggle")||card.querySelector(".route-flags")||card.lastElementChild).insertAdjacentElement("afterend",row)}}}
     let inner=(acts?acts.innerHTML:"")+(pick?pick.outerHTML:"");if(pick)pick.remove();
     if(inner.trim()){let head=card.querySelector(".route-card-head")||card.firstElementChild;let m=document.createElement("template");m.innerHTML=`<details class="more tmore" data-mk="t${t.id}" onclick="event.stopPropagation()" ondragstart="event.stopPropagation()"><summary title="Edit, delete, messenger…">⋯</summary><div class="more-body">${inner}</div></details>`;head.appendChild(m.content)}
+    if(window.SHIFT_ETA&&t.status==="in_progress"){const e=SHIFT_ETA.forTask(t);const h=card.querySelector(".route-card-head")||card.firstElementChild;h&&h.insertAdjacentHTML("afterend",`<div class="eta-line" data-eta-task="${t.id}" title="${esc(e?e.title:"")}"${e?"":" hidden"}>🕒 ${esc(e?e.text:"")}</div>`)}
     return tp.innerHTML}catch(e){return html}
 };
+/* v4.5.0 ETAs: refresh every minute and update the lines in place (no re-render) */
+async function etaTick(){try{if(!window.SHIFT_ETA||typeof db==="undefined")return;await SHIFT_ETA.refresh(db,tasks);
+  document.querySelectorAll(".eta-line[data-eta-task]").forEach(el=>{const t=tasks.find(x=>x.id===Number(el.dataset.etaTask)),e=t&&SHIFT_ETA.forTask(t);el.hidden=!e;if(e){el.textContent="🕒 "+e.text;el.title=e.title}})}catch(e){console.warn("eta",e)}}
+setTimeout(etaTick,1500);setInterval(etaTick,60000);
 function placeMenu(d){const b=d.querySelector(":scope>.more-body"),sm=d.querySelector(":scope>summary");if(!b||!sm)return;
   const r=sm.getBoundingClientRect(),W=innerWidth,H=innerHeight;b.style.left="0px";b.style.top="0px";const bw=b.offsetWidth,bh=b.offsetHeight;
   let x=Math.min(Math.max(8,r.right-bw),W-bw-8),y=r.bottom+4;if(y+bh>H-8)y=Math.max(8,r.top-bh-4);if(y+bh>H-8)y=8;b.style.left=x+"px";b.style.top=y+"px"}

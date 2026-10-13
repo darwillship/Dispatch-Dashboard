@@ -213,3 +213,10 @@ v4.4.1 (Oct 13, 2026)
   DELIVERY = completed on arrival at the delivery address. PICKUP = completed on arrival back at McCook,
   only after the truck left the pickup address. No more "after-the-fact" matches.
   Rollback: redeploy the v13 bundle (assigned_at column is harmless if left).
+
+v4.5.0 (Oct 13, 2026)
+- ETAs (eta.js): In Progress tasks show "About N min to <place>" on the board and on trucks.html.
+  Target: pickup address until the truck has left it, then McCook; delivery address; routes = next stop not done.
+  Estimate = 5 min + straight-line km x 1.0 (x1.2 at 7-9 AM and 3-6 PM). No routing service or API key.
+  Hidden when the truck's GPS is older than 10 min; "At <place>" when parked at the target or another known stop.
+  Backtest on 13 real trips (Sep 20-Oct 13): median error ~7 min, 8 of 13 within 10 min.
