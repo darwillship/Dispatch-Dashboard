@@ -110,7 +110,7 @@ async function load(){
 const OPEN=new Set(JSON.parse(sessionStorage.getItem("trucks-open")||"[]"));
 const dur=m=>m==null?"":m<60?m+" min":Math.floor(m/60)+" h "+String(m%60).padStart(2,"0")+" min";
 function stopsHtml(vid,day,today){const ev=(D.ev||[]).filter(e=>Number(e.vehicle_id)===vid);
-  const d0=Date.parse(ctAt(day,"00:00"));const inDayMin=e=>{const a=Date.parse(e.started_at);if(a>=d0)return null;const b=e.ended_at?Date.parse(e.ended_at):Date.now();return Math.max(0,Math.round((b-d0)/60000))};
+  const d0=Number(ctAt(day,"00:00"));const inDayMin=e=>{const a=Date.parse(e.started_at);if(a>=d0)return null;const b=e.ended_at?Date.parse(e.ended_at):Date.now();return Math.max(0,Math.round((b-d0)/60000))};
   const idle=ev.reduce((a,e)=>a+(inDayMin(e)!=null?0:(e.idle_minutes||0)),0),off=ev.reduce((a,e)=>{const m=inDayMin(e);return a+(m!=null?m:(e.engine_off_minutes||0))},0);
   const dn=id=>{const d=D.drivers.find(x=>x.id===Number(id));return d?d.name:"Driver unknown"};
   const li=ev.map(e=>{const on=!e.ended_at;const kind=e.kind==="idle"?'<span class="k-idle">Idle</span>':'<span class="k-off">Engine off</span>';
