@@ -593,3 +593,5 @@ grant select,insert,update,delete on public.vehicle_status to service_role;
 -- ROLLBACK: select cron.unschedule('vzc-sync-live');
 
 -- v4.4.1: migration v441_task_assigned_at — dispatch_tasks.assigned_at + trigger dispatch_tasks_stamp_assigned (additive)
+
+-- v4.6.0: migrations v460_vehicle_stop_events (+ v460_stop_events_grant) — every stop/idle >= 2 min, read-only for the dashboard

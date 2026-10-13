@@ -220,3 +220,12 @@ v4.5.0 (Oct 13, 2026)
   Estimate = 5 min + straight-line km x 1.0 (x1.2 at 7-9 AM and 3-6 PM). No routing service or API key.
   Hidden when the truck's GPS is older than 10 min; "At <place>" when parked at the target or another known stop.
   Backtest on 13 real trips (Sep 20-Oct 13): median error ~7 min, 8 of 13 within 10 min.
+
+v4.6.0 (Oct 13, 2026)
+- Trucks page: every stop of the day under each truck (collapsible, newest first, day picker).
+  A stop = the truck sat still 2+ minutes. Type Idle (engine on) or Engine off; location name from Named Places /
+  saved locations / task addresses, else the Verizon address; category McCook base / Overnight spot / Task stop /
+  Detected stop / Stop; driver = driver scheduled on that truck then.
+- New table vehicle_stop_events (written by vzc-sync v16 during its normal track reads, no extra Verizon calls).
+  Rows are never deleted: a stop that a later recompute merges away gets superseded_at.
+  History starts Oct 13, 2026.

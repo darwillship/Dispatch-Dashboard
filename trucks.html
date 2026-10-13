@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="shift-version" content="v4.5.0"><title>SHIFT Dispatch · Trucks</title>
+<meta name="shift-version" content="v4.6.0"><title>SHIFT Dispatch · Trucks</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#08111a;--card:#0f1a26;--line:#24384c;--muted:#8fa6ba;--txt:#e8f0f7}
@@ -23,18 +23,24 @@ a.btn,button{font:inherit;font-weight:800;font-size:12.5px;color:var(--txt);back
 dialog{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:14px;width:min(420px,94vw)}dialog::backdrop{background:rgba(0,0,0,.6)}
 dialog label{display:block;font-size:12px;font-weight:800;margin:8px 0 3px;color:var(--muted)}dialog input,dialog select{width:100%;font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:#0b1520;color:var(--txt)}
 .err{color:#ffb4b4;font-weight:800}
+.stops{border-top:1px solid #1d2c3b;padding-top:6px;font-size:12.5px}.stops>summary{cursor:pointer;font-weight:850;color:var(--muted)}.stops>summary b{color:var(--txt)}
+.sl{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:5px;max-height:420px;overflow:auto}
+.sl li{border:1px solid #1d2c3b;border-radius:9px;padding:5px 8px;display:grid;grid-template-columns:auto 1fr;gap:1px 8px}
+.sl .tm{font-weight:850;white-space:nowrap}.sl .nm{font-weight:800;min-width:0;overflow-wrap:anywhere}.sl .sub{grid-column:1/-1;color:var(--muted);font-size:11.5px}
+.k-idle{color:#f2c14e;font-weight:900}.k-off{color:#8fd0ff;font-weight:900}.sl li.ongoing{border-color:#2f6b8f}
+body.light .stops,body.light .sl li{border-color:#dde6ef}body.light #day{background:#fff!important}
 @media(max-width:600px){main{padding:10px}.grid{grid-template-columns:1fr}header{padding:10px 12px}}
 body.light{--bg:#f3f6fa;--card:#fff;--line:#cfdbe7;--muted:#5b7085;--txt:#0d1824}body.light a.btn,body.light button{background:#eef4fa}body.light dialog input,body.light dialog select{background:#fff}
 </style></head>
 <body>
-<header><h1>🚛 Trucks</h1><span class="muted" id="upd">Loading…</span><span class="sp"></span><a class="btn" href="index.html">← Dispatch board</a></header>
+<header><h1>🚛 Trucks</h1><span class="muted" id="upd">Loading…</span><span class="sp"></span><label class="muted" style="font-weight:800;font-size:12.5px">Stops for <input type="date" id="day" style="font:inherit;padding:4px 6px;border-radius:8px;border:1px solid var(--line);background:#0b1520;color:var(--txt)"></label><a class="btn" href="index.html">← Dispatch board</a></header>
 <main><div class="summary" id="sum"></div><div id="err" class="err"></div><div class="grid" id="grid"></div>
-<p class="muted" style="font-size:12px;margin-top:14px">Live status comes from Verizon Connect (updated about every minute). Driver = the driver scheduled on that truck right now (Truck Schedule, Daily Overrides, truck switches). Tasks and stops are for today (CT). Engine hours / odometer are not shown: they are not in the live feed we read.</p></main>
+<p class="muted" style="font-size:12px;margin-top:14px">Live status comes from Verizon Connect (updated about every minute). Driver = the driver scheduled on that truck right now (Truck Schedule, Daily Overrides, truck switches). Tasks and the stop count are for today (CT); the stop list follows the day picker. Stop list = every time the truck sat still 2+ minutes (Idle = engine on, Engine off = parked), from Verizon tracks, refreshed by the updater every few minutes. Engine hours / odometer are not shown: they are not in the live feed we read.</p></main>
 <dialog id="dlg"><form method="dialog" id="dform"><h3 style="margin:0 0 4px" id="dtitle">Truck status</h3>
 <label for="dst">Status</label><select id="dst"><option value="in_service">In Service</option><option value="out_of_service">Out of Service</option><option value="repair_shop">At Repair Shop</option></select>
 <label for="dsince">Since (optional)</label><input id="dsince" type="date"><label for="dnote">Note (optional)</label><input id="dnote" placeholder="e.g. brakes, at the repair shop">
 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button value="cancel" type="submit">Cancel</button><button type="button" id="dsave" style="background:#1f6b45">Save</button></div><input type="hidden" id="dvid"></form></dialog>
-<script src="eta.js?v=4.5.0"></script><script>
+<script src="eta.js?v=4.6.0"></script><script>
 const db=supabase.createClient("https://hqhfstosclasgwgxubip.supabase.co","sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk");
 if(localStorage.getItem("shift-theme")==="light")document.body.classList.add("light");
 const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -79,6 +85,7 @@ async function load(){
   const bad=q.map((r,i)=>r.error?i+": "+r.error.message:null).filter(Boolean);$("err").textContent=bad.length?"Some data could not be loaded: "+bad.join("; "):"";
   [D.veh,D.live,D.svc,D.drivers,D.ts,D.sched,D.sw,D.tasks,D.stops]=q.map(r=>r.data||[]);D.drivers=D.drivers.map(d=>({...d,id:Number(d.id)}));
   try{if(window.SHIFT_ETA)await SHIFT_ETA.refresh(db,D.tasks)}catch(e){console.warn('eta',e)}
+  const day=$("day").value||today;{const r=await db.from("vehicle_stop_events").select("*").eq("work_date",day).is("superseded_at",null).order("started_at",{ascending:false});D.ev=r.error?[]:r.data||[];if(r.error)$("err").textContent+=" Stops: "+r.error.message}
   const SH=[...shiftsFor(prev),...shiftsFor(today)];
   const inDay=t=>t&&t>=t0&&t<t1;
   let cards=[],nMov=0,nOut=0;
@@ -95,14 +102,27 @@ async function load(){
      <div class="row"><span class="k">Location</span><span>${esc(x&&x.address||"—")}</span></div>
      ${(()=>{const ip=tt.filter(t=>t.status==="in_progress");const e=ip.map(t=>window.SHIFT_ETA&&SHIFT_ETA.forTask(t)).filter(Boolean);return e.length?`<div class="row"><span class="k">Heading</span><span class="eta" title="${esc(e[0].title)}">🕒 ${esc(e[0].text)}</span></div>`:""})()}
      <div class="row"><span class="k">Last report</span><span>${esc(when(x&&x.reported_at))}</span></div>
-     <div class="stats"><span>Tasks today <b>${tt.length}</b></span><span>Done <b>${done}</b></span><span>Detected stops <b>${st}</b></span></div></div>`)}
+     <div class="stats"><span>Tasks today <b>${tt.length}</b></span><span>Done <b>${done}</b></span><span>Detected stops <b>${st}</b></span></div>${stopsHtml(id,day,today)}</div>`)}
   $("grid").innerHTML=cards.join("");
   $("sum").innerHTML=`<b>${cards.length}</b> trucks · <b>${nMov}</b> moving · <b>${nOut}</b> out of service`;
   const lastUpd=D.live.map(l=>l.updated_at).filter(Boolean).sort().pop();$("upd").textContent="Verizon data "+(lastUpd?when(lastUpd):"—")+" · page refreshes every 30 s";
 }
+const OPEN=new Set(JSON.parse(sessionStorage.getItem("trucks-open")||"[]"));
+const dur=m=>m==null?"":m<60?m+" min":Math.floor(m/60)+" h "+String(m%60).padStart(2,"0")+" min";
+function stopsHtml(vid,day,today){const ev=(D.ev||[]).filter(e=>Number(e.vehicle_id)===vid);
+  const d0=Date.parse(ctAt(day,"00:00"));const inDayMin=e=>{const a=Date.parse(e.started_at);if(a>=d0)return null;const b=e.ended_at?Date.parse(e.ended_at):Date.now();return Math.max(0,Math.round((b-d0)/60000))};
+  const idle=ev.reduce((a,e)=>a+(inDayMin(e)!=null?0:(e.idle_minutes||0)),0),off=ev.reduce((a,e)=>{const m=inDayMin(e);return a+(m!=null?m:(e.engine_off_minutes||0))},0);
+  const dn=id=>{const d=D.drivers.find(x=>x.id===Number(id));return d?d.name:"Driver unknown"};
+  const li=ev.map(e=>{const on=!e.ended_at;const kind=e.kind==="idle"?'<span class="k-idle">Idle</span>':'<span class="k-off">Engine off</span>';
+    const extra=e.kind!=="idle"&&e.idle_minutes>0?` · ${e.idle_minutes} min idling`:"";
+    return `<li class="${on?"ongoing":""}"><span class="tm">${clk(Date.parse(e.started_at))} – ${on?"now":clk(Date.parse(e.ended_at))}</span><span class="nm">${esc(e.location_name||e.address||"Unknown location")}</span>
+      <span class="sub">${kind} · ${dur(e.still_minutes)}${extra} · ${esc(e.category||"Stop")} · ${esc(dn(e.driver_id))}${e.location_name&&e.address?" · "+esc(e.address):""}${ctDate(Date.parse(e.started_at))!==day?" · started "+esc(ctDate(Date.parse(e.started_at))):""}</span></li>`}).join("");
+  return `<details class="stops" data-vid="${vid}" ${OPEN.has(vid)?"open":""}><summary><b>${ev.length}</b> stops ${day===today?"today":"on "+esc(day)} · idle <b>${dur(idle)||"0 min"}</b> · engine off <b>${dur(off)||"0 min"}</b></summary>${ev.length?`<ul class="sl">${li}</ul>`:'<div class="muted" style="margin-top:4px">No stops recorded for this day.</div>'}</details>`}
+document.addEventListener("toggle",e=>{const d=e.target;if(d.classList&&d.classList.contains("stops")){const v=Number(d.dataset.vid);d.open?OPEN.add(v):OPEN.delete(v);sessionStorage.setItem("trucks-open",JSON.stringify([...OPEN]))}},true);
 window.openSvc=function(id){const v=D.veh.find(x=>Number(x.id)===id),s=D.svc.find(x=>Number(x.vehicle_id)===id);$("dvid").value=id;$("dtitle").textContent="🚛 "+(v?v.name:"Truck")+" — status";$("dst").value=s?.status||"in_service";$("dsince").value=s?.since||"";$("dnote").value=s?.note||"";$("dlg").showModal()};
 $("dsave").onclick=async()=>{const id=Number($("dvid").value),st=$("dst").value;
   const r=await db.from("vehicle_status").upsert({vehicle_id:id,status:st,since:$("dsince").value||(st!=="in_service"?ctDate(Date.now()):null),note:$("dnote").value.trim()||null,updated_by:"trucks page",updated_at:new Date().toISOString()},{onConflict:"vehicle_id"});
   if(r.error)return alert("Could not save: "+r.error.message);$("dlg").close();load()};
+$("day").value=ctDate(Date.now());$("day").onchange=()=>load();
 load();setInterval(()=>{if(!$("dlg").open)load()},30000);
 </script></body></html>

@@ -433,6 +433,48 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
     if (out.length) dsum.auto_status = out;
   }
 
+  async function stopEvents(tr: M.VehicleTrack, judged: U.Judged[], shifts: any[], dayStart: number, dayEnd: number, date: string, canWrite: boolean, dsum: any) {
+    const STOP_EVENT_MIN_MIN = 2;
+    const v = tr.vehicleId, named = await namedPlaces();
+    const cat: Record<string, string> = { base: "McCook base", home: "Overnight spot", planned: "Task stop", unplanned: "Detected stop", idle: "Stop", short: "Stop", private: "Private", clipped: "Stop", other_day: "Stop" };
+    const rows: Record<string, any>[] = [];
+    for (const c of judged) {
+      const end = c.departed ?? null;
+      if (c.arrived >= dayEnd || (end != null && end < dayStart)) continue;      // not on this day
+      if (c.stillMinutes < STOP_EVENT_MIN_MIN) continue;
+      let category = cat[c.verdict] || "Stop";
+      if (c.verdict === "clipped" || c.verdict === "other_day") category = c.arrived < dayStart ? "Overnight spot" : "Stop";
+      const nm = c.priv ? null : U.nameFor(c, named);
+      const who = A.whoHadTruck(v, Math.max(c.arrived, dayStart), shifts, env.excludeDrivers);
+      // parked overnight (started before midnight): the engine-off event is before the data we fetch, so it would look like idling
+      const overnight = c.arrived < dayStart;
+      if (overnight) { category = "Overnight spot"; }
+      rows.push({
+        vehicle_id: v, work_date: date, started_at: new Date(c.arrived).toISOString(), ended_at: end != null ? new Date(end).toISOString() : null,
+        still_minutes: c.stillMinutes, engine_off_minutes: overnight ? c.stillMinutes : c.offMinutes, idle_minutes: overnight ? 0 : end != null ? c.idleMinutes : Math.max(0, c.stillMinutes - c.offMinutes),
+        kind: overnight || c.offMinutes >= 1 ? "engine_off" : "idle", category: !overnight && c.verdict === "planned" && c.planned ? "Task stop" : category,
+        location_name: c.priv ? "Private" : (nm?.name || (c.verdict === "planned" && c.planned) || (c.verdict === "base" ? "Darwill McCook" : null) || null),
+        address: c.priv ? null : ((c.addr ?? nm?.address ?? "").replace(/, USA$/, "") || null), lat: c.priv ? null : c.lat, lon: c.priv ? null : c.lon,
+        driver_id: who?.driverId ?? null, source: "vzc_auto", superseded_at: null, updated_at: nowIso,
+      });
+    }
+    const out = (dsum.stop_events ||= { trucks: [] as any[], writes: 0 });
+    out.trucks.push({ truck: tr.name, stops: rows.length });
+    if (opt.dryRun) { (out.sample ||= []).push(...rows.slice(-3).map((r) => ({ truck: tr.name, at: M.ctClock(Date.parse(r.started_at)), end: r.ended_at ? M.ctClock(Date.parse(r.ended_at)) : "ongoing", kind: r.kind, cat: r.category, name: r.location_name, min: r.still_minutes }))); return; }
+    if (!canWrite) return;
+    if (rows.length) {
+      const { error } = await db.from("vehicle_stop_events").upsert(rows, { onConflict: "vehicle_id,started_at" });
+      if (error) { out.error = error.message; return; }
+      out.writes += rows.length;
+    }
+    // a stop that a later, fuller track no longer has (merged / re-split) is marked superseded, never deleted
+    const keep = rows.map((r) => r.started_at);
+    let q = db.from("vehicle_stop_events").update({ superseded_at: nowIso }).eq("vehicle_id", v).eq("work_date", date).is("superseded_at", null);
+    if (keep.length) q = q.not("started_at", "in", `(${keep.map((k) => `"${k}"`).join(",")})`);
+    const { error: se } = await q;
+    if (se) out.error = se.message;
+  }
+
   async function unplannedForDate(date: string, dsum: any, tracks: M.VehicleTrack[], matches: M.TaskMatch[], trows: any[], srows: any[], plan: any[], winStart: number, winEnd: number) {
     const dayStart = winStart, dayEnd = M.ctMidnightUtc(addDays(date, 1));
     const ms = (v: any) => (v == null ? null : Date.parse(v));
@@ -489,6 +531,9 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
       const baseArr = M.computeVisits(tr.tl, base, v).filter((x) => !x.clipped).map((x) => x.arrived);
       const home = U.homePlace(tr.tl, dayStart);
       const judged = U.detectStops({ tl: tr.tl, now: winEnd, dayStart, dayEnd, base, home, planned });
+      // v4.6.0: every stop/idle >= STOP_EVENT_MIN_MIN for the Trucks page (vehicle_stop_events; rows never deleted)
+      try { await stopEvents(tr, judged, shifts, dayStart, dayEnd, date, canWrite, dsum); }
+      catch (e) { const msg = String((e as Error)?.message || e).slice(0, 200); (dsum.stop_events ||= {}).error = msg; warnings.push("stop events: " + msg); }
       const counts: Record<string, number> = {};
       for (const c of judged) counts[c.verdict] = (counts[c.verdict] || 0) + 1;
       dsum.unplanned_checked.push({ truck: tr.name, home: home?.address || null, stops: counts });
