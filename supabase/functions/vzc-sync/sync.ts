@@ -17,7 +17,7 @@ const WRITE_MAX_AGE_DAYS = 1;          // writes only for today + yesterday (CT)
 // v3.12.0 auto status: never touched by the updater (stuck in_progress routes + the combined pair). Also enforced in SQL (vzc_auto_status).
 const AUTO_STATUS_PROTECTED = [52, 58, 61, 78, 98, 107, 117, 140, 161, 162];
 const LIVE_STATE: Record<string, string> = { Moving: "Moving", Idle: "Idle", Stop: "Engine off" };
-const TASK_COLS = "id,created_at,vehicle_id,messenger_id,title,status,task_type,work_date,scheduled_at,completed_at,assigned_driver_id,pickup_name,pickup_address,delivery_name,delivery_address,is_route,combined_into_task_id,gps_departed_at,gps_arrived_at,gps_left_destination_at,gps_vehicle_id,gps_source,gps_origin_engine_on_at,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_returned_base_at,gps_match_method,gps_match_distance_m";
+const TASK_COLS = "id,created_at,assigned_at,vehicle_id,messenger_id,title,status,task_type,work_date,scheduled_at,completed_at,assigned_driver_id,pickup_name,pickup_address,delivery_name,delivery_address,is_route,combined_into_task_id,gps_departed_at,gps_arrived_at,gps_left_destination_at,gps_vehicle_id,gps_source,gps_origin_engine_on_at,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_returned_base_at,gps_match_method,gps_match_distance_m";
 const STOP_COLS = "id,task_id,seq,location_name,location_address,status,gps_arrived_at,gps_departed_at,gps_vehicle_id,gps_source,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_match_method,gps_match_distance_m";
 
 export interface SyncOptions { liveOnly?: boolean; dryRun: boolean; dates?: string[]; vehicles?: string[]; source?: string; recompute?: boolean; assignSim?: { ignoreTrucksOf: number[]; allDay: boolean } }
@@ -318,7 +318,7 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
       targets.push({
         id: t.id, kind: t.is_route ? "route" : "single", title: t.title, driverId: t.assigned_driver_id ?? null, plannedVehicleId: plannedFor(t),
         origin, dest, stops, existing: t, completedAt: t.completed_at ? Date.parse(t.completed_at) : null, scheduledAt: t.scheduled_at ? Date.parse(t.scheduled_at) : null,
-        createdAt: t.created_at ? Date.parse(t.created_at) : null,
+        createdAt: t.created_at ? Date.parse(t.created_at) : null, assignedAt: t.assigned_at ? Date.parse(t.assigned_at) : null,
         vehicleLocked: t.vehicle_id != null,
         shiftWindows: t.assigned_driver_id ? dayShifts.filter((s) => s.driverId === Number(t.assigned_driver_id) && s.date === date && A.clear(s)).map((s) => [s.start!, s.end!] as [number, number]) : null,
       });

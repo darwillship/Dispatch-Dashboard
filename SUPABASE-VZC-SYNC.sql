@@ -591,3 +591,5 @@ grant select,insert,update,delete on public.vehicle_status to service_role;
 -- migration v440_vzc_sync_locks: vzc_sync_lock table + vzc_try_lock / vzc_unlock / vzc_is_locked (service_role only)
 -- select cron.schedule('vzc-sync-live','1-59/3,2-59/3 * * * *',$$select public.vzc_sync_invoke(false,'{"live_only":true,"source":"pg_cron_live"}'::jsonb)$$);
 -- ROLLBACK: select cron.unschedule('vzc-sync-live');
+
+-- v4.4.1: migration v441_task_assigned_at — dispatch_tasks.assigned_at + trigger dispatch_tasks_stamp_assigned (additive)

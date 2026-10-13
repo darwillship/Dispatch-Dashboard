@@ -210,7 +210,7 @@ export interface StopTarget { id: number; seq: number; place: Place; status: str
 export interface TaskTarget {
   id: number; kind: "single" | "route"; title: string; driverId: number | null; plannedVehicleId: number | null;
   origin: Place | null; dest: Place | null; stops: StopTarget[]; existing: Record<string, any>;
-  completedAt: number | null; scheduledAt: number | null; createdAt: number | null;
+  completedAt: number | null; scheduledAt: number | null; createdAt: number | null; assignedAt?: number | null;
   /** v4.0.0: the assigned driver's clearly scheduled shift windows (UTC ms). An after-the-fact match must start inside one. */
   shiftWindows?: [number, number][] | null;
   /** v4.0.0: dispatch_tasks.vehicle_id is set — match ONLY this truck (beats gps_vehicle_id and the schedule). */
@@ -247,6 +247,15 @@ export function earliestTripStart(task: TaskTarget): number | null {
   if (task.scheduledAt != null && (e == null || task.scheduledAt < e)) e = task.scheduledAt;
   return e;
 }
+/** v4.4.1: only GPS at/after this counts toward completing a task = max(created_at, assigned_at). */
+export function gpsGate(createdAt: number | null | undefined, assignedAt: number | null | undefined): number | null {
+  const xs = [createdAt, assignedAt].filter((x): x is number => x != null && !isNaN(x));
+  return xs.length ? Math.max(...xs) : null;
+}
+/** v4.4.1: pickup = goods come back to McCook (task_type pickup, or destination is the yard and the origin is not). */
+export function isPickupTask(taskType: any, destIsBase: boolean, originIsBase: boolean): boolean {
+  return String(taskType || "").toLowerCase() === "pickup" || (destIsBase && !originIsBase);
+}
 /** Origin departure when known, else destination/stop arrival. */
 export function tripStartMs(originDeparted: number | null | undefined, arrived: number): number {
   return originDeparted != null ? originDeparted : arrived;
@@ -272,18 +281,13 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
    * Manual anchors (existing gps_* within ANCHOR_MS) skip the gate so a typed time still wins.
    */
   const timeOk = (task: TaskTarget, ov: Visit | null, dv: Visit, hasManualAnchor: boolean): { ok: boolean; afterFact: boolean } => {
+    // v4.4.1: no more "after-the-fact" matches. The destination arrival (and for pickups the pickup departure)
+    // must be at/after max(created_at, assigned_at). Typed (manual) anchors still win.
     if (hasManualAnchor) return { ok: true, afterFact: false };
-    const earliest = earliestTripStart(task);
-    if (earliest == null) return { ok: true, afterFact: false };
-    const start = tripStartMs(ov?.departed, dv.arrived);
-    if (start >= earliest) return { ok: true, afterFact: false };
-    // after-the-fact: visit finished before the task existed
-    const visitEnd = dv.departed ?? dv.arrived;
-    const createdFloor = task.createdAt != null ? task.createdAt - CREATED_GRACE_MS : earliest;
-    const schedFits = task.scheduledAt == null || task.scheduledAt <= visitEnd + 60 * 60_000;   // a future-scheduled task is not "after the fact"
-    const inShift = !task.shiftWindows || task.shiftWindows.some(([a, b]) => start >= a && start < b);   // v4.0.0: never another shift's trip
-    if (visitEnd < createdFloor && schedFits && inShift && !claimedByOther(dv.vehicleId, dv.arrived, task.id)) return { ok: true, afterFact: true };
-    return { ok: false, afterFact: false };
+    const gate = gpsGate(task.createdAt, task.assignedAt);
+    if (gate != null && dv.arrived < gate) return { ok: false, afterFact: false };
+    if (task.scheduledAt == null || gate == null) return { ok: true, afterFact: false };
+    return { ok: true, afterFact: false };
   };
   const firstBaseAfter = (v: VehicleTrack, t: number | null) =>
     t == null ? null : visits(v, input.base).find((b) => !b.clipped && b.arrived > t)?.arrived ?? null;
@@ -366,6 +370,13 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
         if (exDep != null && (!ov || Math.abs(ov.departed! - exDep) > ANCHOR_MS) && exArr == null) continue;
         const gate = timeOk(task, ov, dv, exArr != null || exDep != null);
         if (!gate.ok) continue;
+        {
+          const dBase = !!task.dest.isBase || sameSpot(task.dest, input.base), oBase = !!task.origin && (!!task.origin.isBase || sameSpot(task.origin, input.base));
+          if (isPickupTask(task.existing.task_type, dBase, oBase) && exArr == null) {
+            const g = gpsGate(task.createdAt, task.assignedAt);
+            if (!ov || ov.departed == null || (g != null && ov.departed < g)) continue;   // never "returned to base" without visiting the pickup first
+          }
+        }
         const planned = v.vehicleId === task.plannedVehicleId;
         const score = (planned ? 4 : 0) + (ov ? 3 : 0) + timeBonus(task, dv.arrived) - (gate.afterFact ? 5 : 0) - dv.arrived / 1e14;
         cands.push({ task, v, dv, ov, score, planned });
@@ -409,14 +420,18 @@ export function autoStatusFor(t: Record<string, any>, stopRows: Record<string, a
     return left != null && AUTO_FROM.in_progress.includes(st) ? { to: "in_progress", at: left } : null;
   }
   const arr = ms(t.gps_arrived_at) ?? m?.dest?.arrived ?? null;
-  // Completed once the truck has LEFT the destination (completed_at = arrival time), so the driver keeps the whole visit to
-  // press Missed/Refused. Destination = McCook yard: the trip ends on arrival.
+  // v4.4.1 rules. Only GPS at/after max(created_at, assigned_at) counts.
+  //  DELIVERY: completed on geofence arrival at the delivery address (completed_at = arrival).
+  //  PICKUP:   completed on arrival back at McCook, after the truck left the pickup address (both after the gate).
+  const gate = gpsGate(ms(t.created_at), ms(t.assigned_at));
+  const okT = (x: number | null) => x != null && (gate == null || x >= gate);
   const terminal = normalizeAddress(t.delivery_address) === BASE_NORM;
-  const leftDest = ms(t.gps_left_destination_at) ?? (m?.dest && m.dest.arrived === arr ? m.dest.departed : null) ?? null;
-  if (arr != null && (terminal || leftDest != null)) return AUTO_FROM.completed.includes(st) ? { to: "completed", at: arr } : null;
-  if (arr != null) return AUTO_FROM.in_progress.includes(st) ? { to: "in_progress", at: ms(t.gps_departed_at) ?? m?.origin?.departed ?? arr } : null;
-  const left = ms(t.gps_departed_at) ?? m?.origin?.departed ?? null;
-  return left != null && AUTO_FROM.in_progress.includes(st) ? { to: "in_progress", at: left } : null;
+  const originBase = normalizeAddress(t.pickup_address) === BASE_NORM;
+  const pickup = isPickupTask(t.task_type, terminal, originBase);
+  const dep = ms(t.gps_departed_at) ?? m?.origin?.departed ?? null;
+  if (okT(arr) && (!pickup || (okT(dep) && dep! <= arr!))) return AUTO_FROM.completed.includes(st) ? { to: "completed", at: arr! } : null;
+  if (okT(dep)) return AUTO_FROM.in_progress.includes(st) ? { to: "in_progress", at: dep! } : null;
+  return null;
 }
 
 // ---------- patches (only fields that are still NULL) ----------

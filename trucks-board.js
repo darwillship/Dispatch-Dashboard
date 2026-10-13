@@ -238,7 +238,7 @@ window.taskCard=function(t){
       acts.insertAdjacentHTML("beforeend",`<button class="mini" type="button" onclick="event.stopPropagation();SHIFT_openMessenger(${t.id})" title="Assign to Messenger (no truck, no GPS tracking)">🛵 Messenger</button>`);
     }
     if(!t.assigned_driver_id&&t.vehicle_id==null&&!isMsg(t)&&t.status!=="completed"&&!t.combined_into_task_id){
-      let rdy=(t.planning_stage||"ready")!=="brainstorm";if(rdy)card.classList.add("is-ready");
+      let rdy=(t.planning_stage||"ready")!=="brainstorm";if(rdy){card.classList.add("is-ready");(card.querySelector(".route-card-head")||card.firstElementChild)?.insertAdjacentHTML("beforeend",'<span class="ready-badge" title="Ready to dispatch">READY</span>')}
       (flags||card.querySelector(".route-footer")||card.firstElementChild)?.insertAdjacentHTML(flags?"afterend":"beforebegin",`<div class="ready-toggle" onclick="event.stopPropagation()" title="Ready to dispatch?">Ready? <button type="button" class="yes ${rdy?"on":""}" onclick="SHIFT_setReady(${t.id},true)">Yes</button><button type="button" class="no ${rdy?"":"on"}" onclick="SHIFT_setReady(${t.id},false)">No</button></div>`);
     }
     let v=taskTruck(t);
@@ -253,7 +253,8 @@ window.taskCard=function(t){
 };
 window.SHIFT_setReady=async function(id,yes){
   let t=tasks.find(x=>x.id===id);if(!t)return;let want=yes?"ready":"brainstorm";if((t.planning_stage||"ready")===want)return;
-  let r=await db.from("dispatch_tasks").update({planning_stage:want}).eq("id",id);if(r.error)return alert("Could not save: "+r.error.message);await load();
+  const was=t.planning_stage;t.planning_stage=want;try{render()}catch(_){}   // v4.4.1: show it right away
+  let r=await db.from("dispatch_tasks").update({planning_stage:want}).eq("id",id);if(r.error){t.planning_stage=was;try{render()}catch(_){}return alert("Could not save: "+r.error.message)}await load();
 };
 window.SHIFT_setTaskDriver=async function(id,val){
   if(val==="other"){let names=(drivers||[]).map(d=>d.id+" = "+d.name).join("\n");let x=prompt("Driver number:\n"+names);if(!x)return render();val=x.trim()}
@@ -664,6 +665,17 @@ const css43=`
 #drivers.drivers{display:grid!important;column-count:auto!important;grid-template-columns:repeat(auto-fill,minmax(270px,1fr))!important;gap:0 10px!important;grid-auto-rows:2px;align-items:start!important}
 #drivers.drivers>*{margin-bottom:10px!important}
 .plan-msg{margin-top:6px}
+/* v4.4.1 */
+:has(>* details.more[open]),:has(details.more[open]){transform:none!important;filter:none!important;will-change:auto!important}
+.task:has(details.more[open]):hover{transform:none!important}
+.ready-toggle{display:flex!important;flex-wrap:wrap;align-items:center;gap:6px!important;margin:6px 0 0!important}
+.ready-toggle button{font-weight:800!important;padding:3px 12px!important;border-radius:8px!important;border:1px solid #8a9aab!important;background:transparent!important;color:#8a9aab!important;opacity:.75}
+.ready-toggle button.on.yes{background:#1f9d57!important;border-color:#1f9d57!important;color:#fff!important;opacity:1}
+.ready-toggle button.on.no{background:#6b7785!important;border-color:#6b7785!important;color:#fff!important;opacity:1}
+html body .task.is-ready,html body.light-mode .task.is-ready,html body #brainstorm .task.is-ready,html body.light-mode #brainstorm .task.is-ready,html body #ready .task.is-ready,html body.light-mode #ready .task.is-ready{border-left:4px solid #1f9d57!important;border-left-color:#1f9d57!important;box-shadow:inset 0 0 0 1px rgba(31,157,87,.35)!important}
+.ready-badge{display:inline-block;font-size:10px;font-weight:900;letter-spacing:.06em;color:#fff;background:#1f9d57;border-radius:6px;padding:1px 6px;margin-left:4px}
+.plan-msg-row{display:flex;margin-top:6px;clear:both}.plan-msg-row .plan-msg{margin:0!important;position:static!important}
+
 #drivers.drivers>.driver{min-width:0;margin:0!important;width:auto!important}
 #drivers .bottom-wide{grid-column:1/-1}
 .off-line{font-size:12.5px;color:#8fa6ba;font-weight:700;padding:6px 4px}
@@ -767,7 +779,7 @@ window.taskCard=function(t){
   try{let tp=document.createElement("template");tp.innerHTML=html;let card=tp.content.querySelector(".task");if(!card)return html;
     let acts=card.querySelector(".task-actions"),pick=card.querySelector(".task-driver-pick");
     const freeT=!t.assigned_driver_id&&t.vehicle_id==null&&!isMsg(t)&&t.status!=="completed"&&!t.combined_into_task_id;
-    if(acts){const mb=[...acts.querySelectorAll("button")].find(b=>/Messenger/.test(b.textContent)&&!/Edit/.test(b.textContent));if(mb){mb.remove();if(freeT){mb.classList.add("plan-msg");(card.querySelector(".ready-toggle")||card.querySelector(".route-flags")||card.lastElementChild).insertAdjacentElement("afterend",mb)}}}
+    if(acts){const mb=[...acts.querySelectorAll("button")].find(b=>/Messenger/.test(b.textContent)&&!/Edit/.test(b.textContent));if(mb){mb.remove();if(freeT){mb.classList.add("plan-msg");const row=document.createElement("div");row.className="plan-msg-row";row.appendChild(mb);(card.querySelector(".ready-toggle")||card.querySelector(".route-flags")||card.lastElementChild).insertAdjacentElement("afterend",row)}}}
     let inner=(acts?acts.innerHTML:"")+(pick?pick.outerHTML:"");if(pick)pick.remove();
     if(inner.trim()){let head=card.querySelector(".route-card-head")||card.firstElementChild;let m=document.createElement("template");m.innerHTML=`<details class="more tmore" data-mk="t${t.id}" onclick="event.stopPropagation()" ondragstart="event.stopPropagation()"><summary title="Edit, delete, messenger…">⋯</summary><div class="more-body">${inner}</div></details>`;head.appendChild(m.content)}
     return tp.innerHTML}catch(e){return html}

@@ -203,3 +203,13 @@ v4.4.0 (Oct 12, 2026)
   full runs never overlap each other.
 - ROLLBACK: run   select cron.unschedule('vzc-sync-live');   (positions go back to every 3 min).
   The function change is harmless without that job; to fully revert, redeploy the v12 vzc-sync bundle.
+
+v4.4.1 (Oct 13, 2026)
+- ⋯ menus open on the first click/tap (the card's hover lift was hiding the floating menu).
+- Plan & Prepare: Ready Yes = green, No = grey; ready cards get a green edge + READY badge right away.
+  Messenger button sits on its own row.
+- GPS auto-complete rules (vzc-sync v14): only GPS after the task was created AND assigned counts
+  (new column dispatch_tasks.assigned_at, stamped by trigger when a driver/truck is set).
+  DELIVERY = completed on arrival at the delivery address. PICKUP = completed on arrival back at McCook,
+  only after the truck left the pickup address. No more "after-the-fact" matches.
+  Rollback: redeploy the v13 bundle (assigned_at column is harmless if left).
