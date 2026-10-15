@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="shift-version" content="v4.7.0"><title>SHIFT Dispatch · Pre-trips</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#08111a;--card:#0f1a26;--line:#24384c;--muted:#8fa6ba;--txt:#e8f0f7;--in:#0b1520}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}header h1{font-size:19px;margin:0;font-weight:900}header .sp{flex:1}
+a.btn,button{font:inherit;font-weight:800;font-size:12.5px;color:var(--txt);background:#14263a;border:1px solid var(--line);border-radius:9px;padding:6px 11px;cursor:pointer;text-decoration:none}
+.muted{color:var(--muted)}main{padding:14px 18px;max-width:1500px;margin:0 auto}
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px}.filters label{display:flex;flex-direction:column;font-size:11.5px;font-weight:800;color:var(--muted);gap:3px}
+.filters input,.filters select{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--in);color:var(--txt);min-width:150px}
+.wrap{display:grid;grid-template-columns:minmax(380px,1fr) minmax(420px,1.25fr);gap:14px;align-items:start}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #1d2c3b;font-size:13px;vertical-align:top}th{font-size:11.5px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.03em}
+tbody tr{cursor:pointer}tbody tr:hover{background:rgba(92,200,255,.07)}tbody tr.sel{background:rgba(92,200,255,.14)}
+.pill{display:inline-block;font-size:11px;font-weight:900;border-radius:999px;padding:1px 8px;border:1px solid var(--line)}.ok{color:#7ee2a8;border-color:#1f6b45;background:#0f2a1f}.bad{color:#ffb4b4;border-color:#7a2a2a;background:#3a1616}.warn{color:#ffcf8a;border-color:#7a5a2a;background:#3a2a12}
+.doc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;position:sticky;top:10px}
+.doc h2{margin:0 0 2px;font-size:18px}.kv{display:grid;grid-template-columns:140px 1fr;gap:4px 10px;margin:10px 0;font-size:13px}.kv .k{color:var(--muted);font-weight:800}
+.grp{margin-top:10px}.grp h4{margin:0 0 4px;font-size:12.5px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em}
+.it{display:flex;justify-content:space-between;border-bottom:1px dashed #1d2c3b;padding:3px 0;font-size:13px}.it.def{color:#ffb4b4;font-weight:800}
+.sig{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);font-size:13px}.sig img{max-width:260px;background:#fff;border-radius:6px}
+.photos img{max-width:180px;border-radius:8px;margin:4px;border:1px solid var(--line)}
+.note{font-size:12px;color:var(--muted);margin-top:12px}.err{color:#ffb4b4;font-weight:800}
+body.light{--bg:#f3f6fa;--card:#fff;--line:#cfdbe7;--muted:#5b7085;--txt:#0d1824;--in:#fff}body.light a.btn,body.light button{background:#eef4fa}body.light th,body.light td{border-color:#e3eaf1}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}.doc{position:static}}
+@media print{header,.filters,#listBox,.noprint{display:none!important}body,body.light{background:#fff;color:#000}.wrap{display:block}.doc{border:none;padding:0;position:static;background:#fff;color:#000}.kv .k,.grp h4,.muted,.note{color:#333}.it{border-color:#bbb}.it.def{color:#a00}.pill{border-color:#999;background:#fff!important;color:#000!important}}
+</style></head>
+<body>
+<header><h1>🛠 Pre-trip inspections</h1><span class="muted" id="cnt">Loading…</span><span class="sp"></span><a class="btn" href="index.html">← Dispatch board</a><a class="btn" href="trucks.html">Trucks</a></header>
+<main>
+<div class="filters"><label>Search<input id="q" placeholder="driver, truck, note…"></label><label>Driver<select id="fd"><option value="">All drivers</option></select></label><label>Truck<select id="fv"><option value="">All trucks</option></select></label>
+<label>From<input type="date" id="f0"></label><label>To<input type="date" id="f1"></label><label>Show<select id="fx"><option value="">All</option><option value="def">With defects / notes</option><option value="unm">Truck name not matched</option></select></label><button type="button" onclick="resetF()">Reset</button></div>
+<div id="err" class="err"></div>
+<div class="wrap"><div id="listBox"><table><thead><tr><th>Submitted (CT)</th><th>Driver</th><th>Truck</th><th>Result</th></tr></thead><tbody id="rows"></tbody></table>
+<p class="note">Read-only. Pre-trips are locked once the driver submits them — this page cannot change or delete them. Truck = the dashboard truck the pre-trip counts for (the app name, matched through the truck name list; “not matched” = an old app truck name with no confirmed dashboard truck).</p></div>
+<div class="doc" id="doc"><div class="muted">Pick a pre-trip on the left to see the full checklist.</div></div></div>
+</main>
+<script>
+const db=supabase.createClient("https://hqhfstosclasgwgxubip.supabase.co","sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk");
+if(localStorage.getItem("shift-theme")==="light")document.body.classList.add("light");
+const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=t=>t?new Date(t).toLocaleString("en-US",{timeZone:"America/Chicago",weekday:"short",month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}):"—";
+const ctDate=t=>new Intl.DateTimeFormat("en-CA",{timeZone:"America/Chicago"}).format(new Date(t));
+let P=[],V=[],MAP=[],SH=[],sel=null;
+const vName=id=>(V.find(v=>Number(v.id)===Number(id))||{}).name||"";
+function truckFor(p){ // same rule as public.pretrip_vehicle_id(): saved id > confirmed name map > exact dashboard name
+  if(p.vehicle_id!=null)return Number(p.vehicle_id);
+  const m=MAP.find(x=>x.name===p.vehicle&&x.certain&&x.vehicle_id!=null);if(m)return Number(m.vehicle_id);
+  const v=V.find(x=>(x.name||"").trim().toLowerCase()===String(p.vehicle||"").trim().toLowerCase());return v?Number(v.id):null;
+}
+const defectsOf=p=>{const cl=Array.isArray(p.checklist)?p.checklist:[];return [...new Set([...(p.defects||[]),...cl.filter(i=>i&&i.result&&!["ok","pass","na","n/a"].includes(String(i.result).toLowerCase())).map(i=>i.item)])]};
+async function load(){
+  const q=await Promise.all([db.from("driver_pretrips").select("*").order("submitted_at",{ascending:false}).limit(2000),db.from("vehicles").select("id,name,active").order("id"),db.from("vehicle_name_map").select("*"),db.from("driver_shifts").select("id,device_shift_id,pretrip_device_id,shift_start,shift_end,status,driver_name")]);
+  const bad=q.map((r,i)=>r.error?["pre-trips","trucks","truck names","shifts"][i]+": "+r.error.message:null).filter(Boolean);$("err").textContent=bad.length?"Could not load "+bad.join("; "):"";
+  [P,V,MAP,SH]=q.map(r=>r.data||[]);
+  P.forEach(p=>{p._v=truckFor(p);p._def=defectsOf(p)});
+  const dn=[...new Set(P.map(p=>p.driver_name).filter(Boolean))].sort();$("fd").innerHTML='<option value="">All drivers</option>'+dn.map(n=>`<option>${esc(n)}</option>`).join("");
+  $("fv").innerHTML='<option value="">All trucks</option>'+V.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join("")+'<option value="unm">Not matched</option>';
+  const h=new URLSearchParams(location.search);if(h.get("driver"))$("fd").value=h.get("driver");if(h.get("id"))sel=Number(h.get("id"));
+  draw();
+}
+function list(){
+  const q=$("q").value.trim().toLowerCase(),d=$("fd").value,v=$("fv").value,a=$("f0").value,b=$("f1").value,x=$("fx").value;
+  return P.filter(p=>{const wd=String(p.work_date||ctDate(p.submitted_at)).slice(0,10);
+    if(d&&p.driver_name!==d)return false;if(v==="unm"?p._v!=null:v&&p._v!==Number(v))return false;
+    if(a&&wd<a)return false;if(b&&wd>b)return false;
+    if(x==="def"&&!(p._def.length||p.comments||(p.condition&&p.condition!=="acceptable")))return false;if(x==="unm"&&p._v!=null)return false;
+    if(q&&![p.driver_name,p.vehicle,vName(p._v),p.trailer,p.comments,p.signature_name,...p._def].join(" ").toLowerCase().includes(q))return false;return true});
+}
+function draw(){
+  const L=list();$("cnt").textContent=`${L.length} of ${P.length} pre-trip${P.length===1?"":"s"}`;
+  $("rows").innerHTML=L.map(p=>{const res=p._def.length?`<span class="pill bad">${p._def.length} defect${p._def.length>1?"s":""}</span>`:p.comments?`<span class="pill warn">OK · note</span>`:`<span class="pill ok">OK</span>`;
+    return `<tr data-id="${p.id}" class="${p.id===sel?"sel":""}" onclick="pick(${p.id})"><td>${esc(fmt(p.submitted_at))}</td><td>${esc(p.driver_name)}</td><td>${p._v!=null?esc(vName(p._v)):`<span class="pill warn" title="Old app truck name — no confirmed dashboard truck">“${esc(p.vehicle)}” not matched</span>`}${p._v!=null&&p.vehicle&&p.vehicle!==vName(p._v)?` <span class="muted">(app: ${esc(p.vehicle)})</span>`:""}</td><td>${res}</td></tr>`}).join("")||`<tr><td colspan="4" class="muted">No pre-trips match.</td></tr>`;
+  if(sel==null&&L.length)sel=L[0].id;show(P.find(p=>p.id===sel));
+}
+window.pick=id=>{sel=id;document.querySelectorAll("#rows tr").forEach(r=>r.classList.toggle("sel",Number(r.dataset.id)===id));show(P.find(p=>p.id===id))};
+function show(p){
+  if(!p){$("doc").innerHTML='<div class="muted">Pick a pre-trip on the left to see the full checklist.</div>';return}
+  const cl=Array.isArray(p.checklist)?p.checklist:[],groups=[...new Set(cl.map(i=>i.group||"Checklist"))];
+  const sh=SH.find(s=>(p.shift_id&&Number(s.id)===Number(p.shift_id))||(s.pretrip_device_id&&s.pretrip_device_id===p.device_pretrip_id));
+  const photos=[].concat(p.photos||[],p.photo_urls||[]).filter(Boolean);
+  const sigImg=p.signature_image||p.signature_url||p.signature_data||null;
+  $("doc").innerHTML=`<div style="display:flex;gap:8px;align-items:start"><div style="flex:1"><h2>Driver Vehicle Inspection — Pre-trip</h2><div class="muted">Darwill · record #${p.id} · locked</div></div><button class="noprint" type="button" onclick="window.print()" title="Print, or choose “Save as PDF” in the print window">🖨 Print / Save PDF</button></div>
+  <div class="kv"><span class="k">Driver</span><span>${esc(p.driver_name)}</span><span class="k">Truck</span><span>${p._v!=null?esc(vName(p._v)):"<i>not matched</i>"}${p.vehicle?` <span class="muted">(picked in app: ${esc(p.vehicle)})</span>`:""}</span>
+  ${p.trailer?`<span class="k">Trailer</span><span>${esc(p.trailer)}</span>`:""}<span class="k">Work date</span><span>${esc(String(p.work_date||"").slice(0,10))}</span><span class="k">Submitted</span><span>${esc(fmt(p.submitted_at))} CT</span>
+  <span class="k">Odometer</span><span>${esc(p.odometer||"—")}</span><span class="k">Condition</span><span>${p.condition?`<span class="pill ${p.condition==="acceptable"?"ok":"bad"}">${esc(p.condition==="acceptable"?"Satisfactory":p.condition)}</span>`:"—"}</span>
+  ${sh?`<span class="k">Shift</span><span>${esc(fmt(sh.shift_start))}${sh.shift_end?" – "+esc(fmt(sh.shift_end)):""} · ${esc(sh.status||"")}</span>`:""}<span class="k">App</span><span class="muted">${esc(p.app_version||"")}</span></div>
+  <div class="grp"><h4>Defects</h4>${p._def.length?p._def.map(d=>`<div class="it def"><span>⚠ ${esc(d)}</span></div>`).join(""):'<div class="muted">No defects marked.</div>'}</div>
+  <div class="grp"><h4>Driver remarks</h4><div>${p.comments?esc(p.comments):'<span class="muted">None</span>'}</div></div>
+  ${groups.map(g=>`<div class="grp"><h4>${esc(g)}</h4>${cl.filter(i=>(i.group||"Checklist")===g).map(i=>{const okr=["ok","pass"].includes(String(i.result).toLowerCase());return `<div class="it ${okr||/^n\/?a$/i.test(i.result)?"":"def"}"><span>${esc(i.item)}</span><b>${esc(okr?"✓ OK":String(i.result||"—").toUpperCase())}</b></div>`}).join("")}</div>`).join("")}
+  ${photos.length?`<div class="grp photos"><h4>Photos</h4>${photos.map(u=>`<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="pre-trip photo"></a>`).join("")}</div>`:""}
+  <div class="sig"><b>Driver signature:</b> ${esc(p.signature_name||"—")}${sigImg?`<div><img src="${esc(sigImg)}" alt="signature"></div>`:""} <span class="muted">· signed in the Driver Time Sheet app ${esc(fmt(p.submitted_at))} CT</span></div>`;
+}
+window.resetF=()=>{["q","fd","fv","f0","f1","fx"].forEach(i=>$(i).value="");draw()};
+["q","fd","fv","f0","f1","fx"].forEach(i=>$(i).addEventListener("input",draw));
+load();
+</script>
+</body></html>

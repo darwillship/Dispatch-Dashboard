@@ -186,7 +186,7 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
   const base = M.makePlace("Darwill McCook", M.BASE_ADDRESS, null)!;
 
   // driver roster + schedules (v3.11.0): who had which truck when (shift times, overnight shifts, daily picks, defaults)
-  let roster: { drivers: A.DriverRow[]; weekly: A.WeeklyRow[]; sched: A.SchedRow[]; truck: A.TruckSchedRow[] | null; switches: A.SwitchRow[] } | null = null;
+  let roster: { drivers: A.DriverRow[]; weekly: A.WeeklyRow[]; sched: A.SchedRow[]; truck: A.TruckSchedRow[] | null; switches: A.SwitchRow[]; events: A.TruckEvent[] | null } | null = null;
   async function loadRoster(fresh = false) {
     if (roster && !fresh) return roster;
     const lo = addDays(dates[0] < today ? dates[0] : today, -2), hi = addDays(today, 1);
@@ -203,13 +203,20 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
     if (d.error) throw new Error("read drivers: " + d.error.message);
     if (w.error) warnings.push("read driver_weekly_schedule: " + w.error.message);
     if (s.error) warnings.push("read driver_schedule: " + s.error.message);
-    roster = { drivers: (d.data || []) as any, weekly: (w.data || []) as any, sched: (s.data || []) as any, truck: ts.error ? null : (ts.data || []) as any, switches: sw.error ? [] : (sw.data || []) as any };
+    // v4.7.0: pre-trips / trucks set by hand / switches from the shared function (falls back to switches only)
+    const ev = await db.rpc("driver_truck_events", { p_from: lo, p_to: hi });
+    if (ev.error) warnings.push("driver_truck_events (v4.7.0 migration missing? using truck switches only): " + ev.error.message);
+    roster = { drivers: (d.data || []) as any, weekly: (w.data || []) as any, sched: (s.data || []) as any, truck: ts.error ? null : (ts.data || []) as any, switches: sw.error ? [] : (sw.data || []) as any, events: ev.error ? null : (ev.data || []) as any };
+    summary.truck_events = ev.error ? "unavailable" : (ev.data || []).length;
     return roster;
   }
   /** shifts of `date` and the day before (overnight shifts own their after-midnight time) */
   async function shiftsAround(date: string, fresh = false): Promise<A.Shift[]> {
     const r = await loadRoster(fresh);
-    const out = [...A.applySwitches(addDays(date, -1), A.shiftsFor(addDays(date, -1), r.drivers, r.sched, r.weekly, r.truck), r.switches), ...A.applySwitches(date, A.shiftsFor(date, r.drivers, r.sched, r.weekly, r.truck), r.switches)];
+    // v4.7.0: a hand-set truck (vehicle_set_at stamped) counts from the time it was set (its "hand" event), not for the whole day
+    const schedEv = r.events ? r.sched.map((x: any) => x.vehicle_set_at && x.vehicle_id != null && x.vehicle_source !== "auto_gps" ? { ...x, vehicle_id: null } : x) : r.sched;
+    const one = (dt: string) => r.events ? A.applyTruckEvents(dt, A.shiftsFor(dt, r.drivers, schedEv, r.weekly, r.truck), r.events, r.drivers) : A.applySwitches(dt, A.shiftsFor(dt, r.drivers, r.sched, r.weekly, r.truck), r.switches);
+    const out = [...one(addDays(date, -1)), ...one(date)];
     if (opt.dryRun && opt.assignSim?.ignoreTrucksOf.length) for (const s of out) if (opt.assignSim.ignoreTrucksOf.includes(s.driverId)) { s.vehicleId = null; s.vehicleSource = null; s.auto = false; }
     return out;
   }

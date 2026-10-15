@@ -595,3 +595,9 @@ grant select,insert,update,delete on public.vehicle_status to service_role;
 -- v4.4.1: migration v441_task_assigned_at — dispatch_tasks.assigned_at + trigger dispatch_tasks_stamp_assigned (additive)
 
 -- v4.6.0: migrations v460_vehicle_stop_events (+ v460_stop_events_grant) — every stop/idle >= 2 min, read-only for the dashboard
+
+-- v4.7.0 (2026-10-15) migrations v470_pretrip_truck + v470_pretrip_move_tasks_fix (additive; nothing dropped or rewritten):
+--   driver_pretrips.vehicle_id, driver_shifts.vehicle_id (FK vehicles), vehicle_name_map (old app names -> vehicles, certain only),
+--   driver_schedule.vehicle_set_at + trigger driver_schedule_stamp_vehicle (stamps when a truck is set by hand),
+--   pretrip_task_moves (log) + AFTER INSERT trigger driver_pretrips_move_tasks (moves not-started tasks; never blocks a pre-trip),
+--   pretrip_vehicle_id(id, text), driver_truck_events(p_from, p_to) -> pretrip / hand / switch events used by the board and vzc-sync.

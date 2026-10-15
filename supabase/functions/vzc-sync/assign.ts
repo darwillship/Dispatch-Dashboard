@@ -20,7 +20,7 @@ export interface Shift {
   driverId: number; name: string; date: string; working: boolean;
   start: number | null; end: number | null;          // UTC ms (end on the next day for overnight shifts)
   timesFrom: "override" | "weekly" | null;           // where the shift times came from (null = no times anywhere)
-  vehicleId: number | null; vehicleSource: "override" | "default" | "weekly" | "switch" | null; auto: boolean;
+  vehicleId: number | null; vehicleSource: "override" | "default" | "weekly" | "switch" | "pretrip" | "hand" | null; auto: boolean;
   row: SchedRow | null; weekly: WeeklyRow | null; active: boolean; schedId?: number | null;
 }
 
@@ -122,7 +122,7 @@ export const overlaps = (a: Shift, b: Shift) => { const [a0, a1] = windowOf(a, f
  *  Juan must not take it away from Paul's later shift). */
 export function truckOf(s: Shift, all: Shift[]): number | null {
   if (s.vehicleId == null) return null;
-  if ((s.vehicleSource === "default" || s.vehicleSource === "weekly") && all.some((o) => o.date === s.date && o.driverId !== s.driverId && o.working && o.vehicleSource === "override" && o.vehicleId === s.vehicleId && overlaps(o, s))) return null;
+  if ((s.vehicleSource === "default" || s.vehicleSource === "weekly") && all.some((o) => o.date === s.date && o.driverId !== s.driverId && o.working && ["override", "pretrip", "hand"].includes(String(o.vehicleSource)) && o.vehicleId === s.vehicleId && overlaps(o, s))) return null;
   return s.vehicleId;
 }
 
@@ -227,8 +227,8 @@ export function decideAssign(ign: Ignition, shifts: Shift[], clockins: ClockIn[]
     const mine = shifts.filter((s) => s.driverId === d).sort((a, b) => Number(covers(b, t)) - Number(covers(a, t)) || (a.date < b.date ? 1 : -1))[0];
     if (!mine) return { action: "none", reason: "time sheet names a driver who is not in the driver list", candidates: [d] };
     if (mine.vehicleId === v && truckOf(mine, shifts) === v) return { action: "none", reason: `${mine.name} already has this truck`, candidates: [d] };
-    if (mine.vehicleSource === "override") return { action: "none", reason: `${mine.name} has a truck picked for this date — never overwritten`, candidates: [d] };
-    const manualOther = claimedBy.filter((s) => s.driverId !== d && s.vehicleSource === "override");
+    if (["override", "pretrip", "hand"].includes(String(mine.vehicleSource))) return { action: "none", reason: `${mine.name} has a truck picked for this date — never overwritten`, candidates: [d] };
+    const manualOther = claimedBy.filter((s) => s.driverId !== d && ["override", "pretrip", "hand"].includes(String(s.vehicleSource)));
     if (manualOther.length) return { action: "none", reason: `truck is picked for ${manualOther[0].name} for this date — never overwritten`, candidates: [d] };
     return { action: "assign", driverId: d, date: mine.date, reason: `${ts.find((c) => c.driverId === d)!.kind} for this truck at ${ctClock(ts.find((c) => c.driverId === d)!.t)}`, candidates: [d] };
   }
@@ -245,4 +245,64 @@ export function decideAssign(ign: Ignition, shifts: Shift[], clockins: ClockIn[]
 /** Apply a decision to the in-memory shifts (so later ignitions in the same run see the truck as taken). */
 export function applyAssign(shifts: Shift[], driverId: number, date: string, vehicleId: number) {
   for (const s of shifts) if (s.driverId === driverId && s.date === date) { s.vehicleId = vehicleId; s.vehicleSource = "override"; s.auto = true; }
+}
+
+/* ---------- v4.7.0 pre-trip decides the truck ----------
+ * Events come from the shared database function public.driver_truck_events(from, to):
+ *   pretrip (time sheet app, at submit time), hand (Set truck by hand on the dashboard, at the time it was set),
+ *   switch (older manual truck switches). Applied in time order, so the LATEST one wins:
+ *   - inside a shift: the shift is split at that time (before = old truck, after = new truck)
+ *   - up to 3 h before a shift starts: the whole shift gets that truck (the shift starts at the pre-trip)
+ *   - a pre-trip with no scheduled shift: the driver is working from the pre-trip until the app shift ends (else 12 h)
+ *   - two drivers on one truck: the later event wins; the earlier driver loses the truck from then on (takenBy)
+ * The SAME code runs in the dashboard (trucks-board.js applyTruckEvents) — keep them in sync. */
+export interface TruckEvent { kind: "pretrip" | "hand" | "switch"; driver_id: number; work_date: string; vehicle_id: number | null; at: string; vehicle_text?: string | null; ref_id?: number | null; shift_end?: string | null }
+export const PRETRIP_LEAD_MS = 3 * 3600e3, PRETRIP_DEFAULT_MS = 12 * 3600e3;
+export function applyTruckEvents(date: string, out: Shift[], events: TruckEvent[] | null | undefined, drivers?: DriverRow[]): Shift[] {
+  const evs = (events || []).filter((e) => String(e.work_date).slice(0, 10) === date && e.at).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const dayA = ctAt(date, "00:00"), dayB = ctAt(addDays(date, 1), "00:00");
+  const win = (s: any): [number, number] => (s.start == null || s.noTimes ? [dayA, dayB] : [s.start, s.end]);
+  for (const e of evs) {
+    const did = Number(e.driver_id), v = e.vehicle_id != null ? Number(e.vehicle_id) : null;
+    // a hand-set / switch saved before or after its work day (planning ahead, fixing a past day) counts for the whole day
+    let at = Date.parse(e.at); if (e.kind !== "pretrip") at = Math.min(Math.max(at, dayA), dayB - 1);
+    const tag = { evKind: e.kind, evAt: at, evRef: e.ref_id ?? null, evText: e.vehicle_text ?? null };
+    if (e.kind === "pretrip") for (const s of out as any[]) if (s.driverId === did && s.date === date) s.pretripAt ??= at;   // "pre-trip done today"
+    if (v == null) continue;                                     // truck name not matched: recorded, truck unchanged
+    const mine = (out as any[]).map((s, i) => [s, i] as [any, number]).filter(([s]) => s.driverId === did && s.date === date && s.working);
+    let hit = mine.find(([s]) => { const [a, b] = win(s); return at >= a && at < b; });
+    if (!hit) hit = mine.filter(([s]) => s.start != null && !s.noTimes && s.start > at && (e.kind !== "pretrip" || s.start - at <= PRETRIP_LEAD_MS)).sort((x, y) => x[0].start - y[0].start)[0];
+    if (!hit && e.kind !== "pretrip") continue;                 // only a pre-trip can start a shift; a hand-set without a shift stays the Daily Override
+    if (!hit) {
+      const d = (drivers || []).find((x) => Number(x.id) === did);
+      const end = e.shift_end ? Date.parse(e.shift_end) : at + PRETRIP_DEFAULT_MS;
+      const base: any = mine[0]?.[0] || (out as any[]).find((s) => s.driverId === did && s.date === date) || {};
+      out.push({ ...base, driverId: did, name: base.name || d?.name || "Driver " + did, date, working: true, start: at, end, timesFrom: "pretrip", vehicleId: v, vehicleSource: e.kind, auto: false, row: base.row ?? null, weekly: base.weekly ?? null, active: base.active ?? true, noTimes: false, ...tag } as any);
+    } else {
+      const [s, i] = hit, [a, b] = win(s);
+      if (at <= a) { Object.assign(s, { vehicleId: v, vehicleSource: e.kind, ...tag }); if (e.kind === "pretrip" && !s.noTimes && s.start != null && at < s.start) s.start = at; }
+      else out.splice(i, 1, { ...s, start: a, end: at, noTimes: false }, { ...s, start: at, end: b, noTimes: false, vehicleId: v, vehicleSource: e.kind, ...tag });
+      // later shifts of the same driver that day follow the new truck
+      for (const s2 of out as any[]) if (s2.driverId === did && s2.date === date && s2.working && s2.start != null && s2.start >= b && !s2.evKind) Object.assign(s2, { vehicleId: v, vehicleSource: e.kind, ...tag });
+    }
+    // later wins: anyone else holding this truck (by an older decision) loses it from `at`
+    for (let k = out.length - 1; k >= 0; k--) {
+      const o: any = out[k];
+      if (o.driverId === did || !o.working || o.vehicleId !== v) continue;
+      if ((o.evAt ?? -Infinity) >= at) continue;
+      const [a, b] = win(o);
+      if (b <= at) continue;
+      const taken = { takenBy: did, takenAt: at, takenKind: e.kind };
+      if (a >= at) Object.assign(o, { vehicleId: null, vehicleSource: null, ...taken });
+      else out.splice(k, 1, { ...o, start: a, end: at, noTimes: false }, { ...o, start: at, end: b, noTimes: false, vehicleId: null, vehicleSource: null, ...taken });
+    }
+  }
+  return out;
+}
+/** Where a shift's truck came from, for labels: pretrip / hand / scheduled / none. */
+export function truckSource(s: any): "pretrip" | "hand" | "scheduled" | "none" {
+  if (s.vehicleId == null) return "none";
+  if (s.vehicleSource === "pretrip") return "pretrip";
+  if (s.vehicleSource === "hand" || s.vehicleSource === "override" || s.vehicleSource === "switch") return "hand";
+  return "scheduled";
 }

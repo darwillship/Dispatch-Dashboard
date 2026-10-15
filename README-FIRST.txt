@@ -229,3 +229,17 @@ v4.6.0 (Oct 13, 2026)
 - New table vehicle_stop_events (written by vzc-sync v16 during its normal track reads, no extra Verizon calls).
   Rows are never deleted: a stop that a later recompute merges away gets superseded_at.
   History starts Oct 13, 2026.
+
+v4.7.0 (2026-10-15) — trucks come from pre-trips
+- Driver cards show where the truck came from: "Pre-trip 6:52 AM" / "Set by hand" / "Scheduled" ("Scheduled, no pre-trip" when the driver has not done one yet).
+- Rule (same in the board, trucks.html and the GPS updater, from DB function driver_truck_events):
+  latest pre-trip today (a second pre-trip = truck switch) > a truck set by hand AFTER that pre-trip > Truck Schedule > none.
+  Two drivers on one truck: the later one wins; the other driver's card says "truck taken by X at HH:MM".
+  Overnight shifts keep the truck past midnight. A pre-trip up to 3 h before a shift gives the whole shift that truck.
+- "Set truck by hand" (driver card ⋯ menu, and the truck card driver picker) replaces "Switch truck now" and the old pickers.
+  It saves a Daily Override; not-started tasks with a fixed truck move with the driver. Old truck switches still count and can still be undone.
+- When a pre-trip changes a driver's truck, their not-started tasks move with them automatically (DB trigger, logged in pretrip_task_moves);
+  the task card shows "Moved to <truck> by pre-trip HH:MM".
+- New page pretrips.html (header → Pre-trips): read-only list, filters, full checklist, print / save PDF.
+- Old app truck names map to dashboard trucks only where certain (table vehicle_name_map). Unmapped: Sterling 65, Sterling 66, International, Freightliner, Semi-Truck.
+Rollback: redeploy vzc-sync from /tmp/up16 (v4.6.0) and revert this commit; the new DB objects are additive and can stay.
