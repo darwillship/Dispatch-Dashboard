@@ -250,3 +250,19 @@ v4.7.1 (2026-10-16) — pre-trips as exceptions
 - "Issues only" filter on both. Full DOT checklist only behind "View full pre-trip" (still Print / Save PDF).
 - Driver cards: small "✅ Pre-trip OK" / "⚠ Pre-trip issues" badge (latest pre-trip that day) linking to the Pre-trips page.
 - Rule lives in pretrip-exceptions.js. Read-only; pre-trips are never edited.
+
+v4.8.0 (2026-10-16) — Map page (map.html, header → Map)
+- Left: the same tasks as the board for the chosen day (same Supabase data, refresh every 20 s). Right: Leaflet + OpenStreetMap tiles.
+  Pins per task: nA = start/pickup, nB = delivery (route stops n.1, n.2…), coloured by status, straight dashed line A→B.
+  Click a task -> its pins light up / map zooms; click a pin -> the task lights up in the list. McCook base is one fixed marker.
+- Live trucks from vehicle_live_location: name, driver (shared rule in truck-shared.js, also used by trucks.html), moving/idling/parked, last GPS report.
+- "Closest truck" per open task = straight-line miles from the truck's last GPS point to the next stop. A hint, not drive time.
+- Coordinates: edge function map-geocode (cache geocode_cache first; misses use the SAME geocoder as vzc-sync: US Census, then
+  OSM Nominatim; max 4 per call, 1.1 s apart, max 30 new per 10 min; only addresses that are on a task/stop). Read-only page otherwise.
+- Routing NOT built. Options for later:
+  * OSRM public demo (router.project-osrm.org): free, no key, but "no heavy use", no SLA, may block — testing only.
+  * OSRM self-hosted (Illinois extract): free software, ~2–4 GB RAM VM ≈ $10–25/month + upkeep; no key; car profile has no truck limits.
+  * Mapbox Directions: key needed; 100,000 requests/month free, then about $2 per 1,000; has live-traffic profile.
+  * Google Routes/Directions API: key + billing needed; about $5 per 1,000 basic requests ($10 with traffic), monthly free credit;
+    note Google terms: Google results should be shown on a Google map, not on OSM tiles.
+  * OSM tile server: fine for light office use with attribution; heavy use -> a tile provider (MapTiler/Stadia, free tiers with a key).
