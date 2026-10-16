@@ -298,3 +298,8 @@ v4.9.0 (Oct 16 2026) — Route planner on map.html (Route tab):
   "Use this order (Combine)" opens the board's Combine preview (index.html#combine=ids) with the planned order; nothing is
   created until "Create route" is pressed there. map-geocode v2 also accepts saved-location addresses.
   Migrations: v490_route_cache, v490_route_cache_grant (additive).
+
+v4.9.1 (Oct 16 2026) — map-route v2: Mapbox driving-traffic (live traffic) when the Supabase Edge Function secret
+  MAPBOX_TOKEN is set, then OSRM, then straight line (fallback reason shown in the planner). Cache key includes the provider
+  (old OSRM rows are never served once Mapbox is on); Mapbox results cached 15 min, OSRM 7 days; fallbacks not cached.
+  Best-order matrix: driving-traffic up to 10 points, driving (typical traffic) above that. The token is NOT in this repo.

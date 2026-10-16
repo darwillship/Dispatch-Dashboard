@@ -1,4 +1,4 @@
-/* SHIFT Route planner for map.html (v4.9.0).
+/* SHIFT Route planner for map.html (v4.9.0; v4.9.1 Mapbox live-traffic labels).
    Source: a route task, one driver's open tasks, or tasks ticked in the Tasks tab -> ordered stop list.
    Reorder by drag (handle ≡, touch friendly) or ↑/↓; add / remove stops (planning only); start McCook; end McCook or last stop.
    Pickup-before-its-drop is checked (warning) and enforced by "Best order" (exact DP up to 13 movable stops, else greedy + 2-opt).
@@ -80,7 +80,7 @@ async function best(){const {locked,mov,last}=parts3();if(mov.length<2){RP.msg="
     let imp=true;while(imp){imp=false;for(let a=0;a<n-1;a++)for(let b=a+1;b<n;b++){const c=[...o.slice(0,a),...o.slice(a,b+1).reverse(),...o.slice(b+1)];if(ok(c)&&len(c)<len(o)-1){o=c;imp=true}}}order=o}
   RP.busy=false;if(!order){RP.msg="No order satisfies every pickup-before-drop rule — check the stops.";return render()}
   const before=mov.map(s=>s.key).join(",");setOrder([...order.map(i=>nodes[i].key),...skipped.map(s=>s.key)]);
-  RP.msg=(before===parts3().mov.map(s=>s.key).join(",")?"Already in the best order":"Best order applied")+` (by ${M.provider==="straight"?"straight-line estimate":"drive time"}${n>13?", heuristic":""}).`+(skipped.length?" Stops without a map location were left at the end.":"");render()}
+  RP.msg=(before===parts3().mov.map(s=>s.key).join(",")?"Already in the best order":"Best order applied")+` (by ${M.provider==="straight"?"straight-line estimate":M.traffic?"drive time with live traffic":"drive time"}${n>13?", heuristic":""}).`+(skipped.length?" Stops without a map location were left at the end.":"");render()}
 /* ---------- actions ---------- */
 RP.move=(k,d)=>{const {mov}=parts3(),ks=mov.map(s=>s.key),i=ks.indexOf(k),j=i+d;if(i<0||j<0||j>=ks.length)return;[ks[i],ks[j]]=[ks[j],ks[i]];setOrder(ks)};
 RP.remove=k=>{const s=RP.stops.find(x=>x.key===k);if(!s||s.locked)return;RP.stops=RP.stops.filter(x=>x!==s);RP.removed.push(s);changed()};
@@ -134,12 +134,12 @@ function html(){const src=sources(),{locked,mov,last}=parts3(),list=ordered(),w=
   <div class="rpopt"><label>End <select onchange="RP.setEnd(this.value)"><option value="base" ${RP.endMode==="base"?"selected":""}>Back at McCook</option><option value="last" ${RP.endMode==="last"?"selected":""}>At the last stop</option></select></label>
    <label>Stop time <input type="number" min="0" max="240" step="5" value="${RP.dwell}" onchange="RP.setDwell(this.value)" style="width:58px"> min</label>
    <select id="rpAdd" onchange="RP.addStop(this.value);this.value=''" style="max-width:100%"><option value="">+ Add a stop…</option>${known.map(([a,n])=>`<option value="${esc(JSON.stringify([n,a]))}">${esc(n||a)} — ${esc(a)}</option>`).join("")}</select></div>
-  <div class="rptot">${r?`<div><b>${fmtMi(r.total.m)}</b> · <b>${fmtT(r.total.s)}</b> driving</div><div class="sb">+ ${list.length} stop${list.length===1?"":"s"} × ${RP.dwell} min = <b>${fmtT(tot)}</b> total</div><div class="rplab">${esc(r.label)}${r.cached?" · cached":""}${r.note?" · "+esc(r.note):""}</div>`:RP.busy?'<div class="sb">Calculating…</div>':'<div class="sb">No route yet.</div>'}${RP.missing&&RP.missing.length?`<div class="nogeo" style="font-size:12px">Not on the map yet (left out of the miles): ${esc(RP.missing.join(", "))}</div>`:""}</div>
+  <div class="rptot">${r?`<div><b>${fmtMi(r.total.m)}</b> · <b>${fmtT(r.total.s)}</b> driving</div><div class="sb">+ ${list.length} stop${list.length===1?"":"s"} × ${RP.dwell} min = <b>${fmtT(tot)}</b> total</div><div class="rplab">${esc(r.label)}${r.cached?" · cached"+(r.provider==="mapbox"&&r.cached_at?" "+esc(clk(r.cached_at)):""):""}${r.note?" · fallback: "+esc(r.note):""}</div>`:RP.busy?'<div class="sb">Calculating…</div>':'<div class="sb">No route yet.</div>'}${RP.missing&&RP.missing.length?`<div class="nogeo" style="font-size:12px">Not on the map yet (left out of the miles): ${esc(RP.missing.join(", "))}</div>`:""}</div>
   <div class="rpact"><button class="rpbtn" type="button" onclick="RP.best()" ${RP.busy||mov.length<2?"disabled":""}>✨ Best order</button><button class="rpbtn g" type="button" onclick="RP.reset()">↺ Reset</button>
    ${isR?`<button class="rpbtn p" type="button" onclick="RP.save()" ${RP.busy||edited||!mov.length?"disabled":""} title="${edited?"Added / removed stops are planning only — edit stops on the board":""}">💾 Save order to route</button>`:`<button class="rpbtn p" type="button" onclick="RP.use()" ${tasksOf(RP.src).length<2?"disabled":""}>⛓ Use this order (Combine)</button>`}</div>
   ${edited&&isR?'<div class="sb" style="padding:0 14px">Added / removed stops are for planning only; Save is off. Change stops on the board.</div>':""}
   ${RP.msg?`<div class="rpmsg">${esc(RP.msg)}</div>`:""}`}
-  <div class="foot">Estimated drive times with no live traffic. Done / arrived stops are fixed. Save changes only the order of pending stops; nothing is deleted.</div></div>`}
+  <div class="foot">${RP.res&&RP.res.traffic?"Drive times from Mapbox include live traffic (still estimates).":"Estimated drive times with no live traffic."} Done / arrived stops are fixed. Save changes only the order of pending stops; nothing is deleted.</div></div>`}
 function render(soft){const b=$("body");if(TAB!=="route"||RP.drag)return;const ae=document.activeElement;if(soft===true&&b.querySelector(".rp")&&ae&&b.contains(ae)&&/^(SELECT|INPUT)$/.test(ae.tagName))return;const sc=b.scrollTop;b.innerHTML=html();b.scrollTop=sc;wireDrag();drawLayer()}
 RP.render=render;
 RP.onData=async()=>{if(!RP.savedLoaded){RP.savedLoaded=true;const r=await db.from("saved_locations").select("name,address").order("name");RP.saved=r.data||[]}

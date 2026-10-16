@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="shift-version" content="v4.9.0"><title>SHIFT Dispatch · Map</title>
+<meta name="shift-version" content="v4.9.1"><title>SHIFT Dispatch · Map</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -83,7 +83,7 @@ button{font:inherit;color:inherit}
 <div id="sheet"><div id="grab"><i></i></div>
 <div class="tabs"><button type="button" id="tbT" class="on">Trucks</button><button type="button" id="tbK">Tasks</button><button type="button" id="tbR">Route</button><span style="flex:1"></span><span id="upd" style="color:var(--mut);font-size:11.5px;align-self:center"></span></div>
 <div class="chips" id="chips"></div><div id="body"></div></div>
-<script src="eta.js?v=4.9.0"></script><script src="truck-shared.js?v=4.9.0"></script>
+<script src="eta.js?v=4.9.1"></script><script src="truck-shared.js?v=4.9.1"></script>
 <script>
 const db=supabase.createClient("https://hqhfstosclasgwgxubip.supabase.co","sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk");
 const FN="https://hqhfstosclasgwgxubip.supabase.co/functions/v1/map-geocode",KEY="sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk";
@@ -248,4 +248,4 @@ if(!matchMedia("(min-width:900px)").matches)setSheet("peek");
 let busy=false;async function refresh(){if(busy||document.hidden)return;busy=true;try{await load()}catch(e){console.error(e);$("upd").textContent="⚠ "+e.message}finally{busy=false}}
 $("day").value=ctDate(Date.now());$("day").onchange=()=>{fitted=false;refresh()};
 refresh();setInterval(refresh,20000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh()});
-</script><script src="route-plan.js?v=4.9.0"></script></body></html>
+</script><script src="route-plan.js?v=4.9.1"></script></body></html>
