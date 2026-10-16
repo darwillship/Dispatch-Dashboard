@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="shift-version" content="v4.7.0"><title>SHIFT Dispatch · Trucks</title>
+<meta name="shift-version" content="v4.7.1"><title>SHIFT Dispatch · Trucks</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#08111a;--card:#0f1a26;--line:#24384c;--muted:#8fa6ba;--txt:#e8f0f7}
@@ -40,7 +40,7 @@ body.light{--bg:#f3f6fa;--card:#fff;--line:#cfdbe7;--muted:#5b7085;--txt:#0d1824
 <label for="dst">Status</label><select id="dst"><option value="in_service">In Service</option><option value="out_of_service">Out of Service</option><option value="repair_shop">At Repair Shop</option></select>
 <label for="dsince">Since (optional)</label><input id="dsince" type="date"><label for="dnote">Note (optional)</label><input id="dnote" placeholder="e.g. brakes, at the repair shop">
 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button value="cancel" type="submit">Cancel</button><button type="button" id="dsave" style="background:#1f6b45">Save</button></div><input type="hidden" id="dvid"></form></dialog>
-<script src="eta.js?v=4.7.0"></script><script>
+<script src="eta.js?v=4.7.1"></script><script>
 const db=supabase.createClient("https://hqhfstosclasgwgxubip.supabase.co","sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk");
 if(localStorage.getItem("shift-theme")==="light")document.body.classList.add("light");
 const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));

@@ -243,3 +243,10 @@ v4.7.0 (2026-10-15) — trucks come from pre-trips
 - New page pretrips.html (header → Pre-trips): read-only list, filters, full checklist, print / save PDF.
 - Old app truck names map to dashboard trucks only where certain (table vehicle_name_map). Unmapped: Sterling 65, Sterling 66, International, Freightliner, Semi-Truck.
 Rollback: redeploy vzc-sync from /tmp/up16 (v4.6.0) and revert this commit; the new DB objects are additive and can stay.
+
+v4.7.1 (2026-10-16) — pre-trips as exceptions
+- Pre-trips page and Time Sheets → Pre-Trips tab show one row per pre-trip: driver, truck, time and either ✅ All OK or the Issues
+  (only failed / needs-attention items, defects, driver remarks). Remarks that describe a problem while no defect is marked = amber "Check remarks".
+- "Issues only" filter on both. Full DOT checklist only behind "View full pre-trip" (still Print / Save PDF).
+- Driver cards: small "✅ Pre-trip OK" / "⚠ Pre-trip issues" badge (latest pre-trip that day) linking to the Pre-trips page.
+- Rule lives in pretrip-exceptions.js. Read-only; pre-trips are never edited.

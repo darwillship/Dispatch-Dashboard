@@ -115,7 +115,7 @@ const dName=id=>{let d=(drivers||[]).find(x=>Number(x.id)===Number(id));return d
 const WORKING=new Set(["working","messenger"]);
 
 /* ---------- schedule resolution ---------- */
-let SWS=[],VST=[],TE=[],TE_OK=false,PTM=[];
+let SWS=[],VST=[],TE=[],TE_OK=false,PTM=[],PTS=[];
 const svcOf=v=>{let r=VST.find(x=>Number(x.vehicle_id)===Number(v));return r&&r.status&&r.status!=="in_service"?r:null};
 window.SHIFT_truckService=svcOf;
 const SVC_L={in_service:"In Service",out_of_service:"Out of Service",repair_shop:"At Repair Shop"};
@@ -247,9 +247,9 @@ window.SHIFT_stopName=stopName;
 async function fetchV4(){
   const prev=addDays(boardDate,-1);
   try{
-    const [a,b,c,d,e,f,g,h]=await Promise.all([db.from("truck_schedules").select("*").order("id"),db.from("driver_schedule").select("*").gte("work_date",prev).lte("work_date",boardDate),db.from("named_places").select("*").order("id"),db.from("messengers").select("*").order("company"),db.from("truck_switches").select("*").eq("active",true).gte("work_date",prev).lte("work_date",boardDate).order("switched_at"),db.from("vehicle_status").select("*"),db.rpc("driver_truck_events",{p_from:prev,p_to:boardDate}),db.from("pretrip_task_moves").select("*").order("moved_at",{ascending:false}).limit(300)]);
+    const [a,b,c,d,e,f,g,h,k]=await Promise.all([db.from("truck_schedules").select("*").order("id"),db.from("driver_schedule").select("*").gte("work_date",prev).lte("work_date",boardDate),db.from("named_places").select("*").order("id"),db.from("messengers").select("*").order("company"),db.from("truck_switches").select("*").eq("active",true).gte("work_date",prev).lte("work_date",boardDate).order("switched_at"),db.from("vehicle_status").select("*"),db.rpc("driver_truck_events",{p_from:prev,p_to:boardDate}),db.from("pretrip_task_moves").select("*").order("moved_at",{ascending:false}).limit(300),db.from("driver_pretrips").select("id,driver_id,driver_name,work_date,vehicle,condition,checklist,defects,comments,submitted_at").eq("work_date",boardDate).order("submitted_at")]);
     TS_OK=!a.error;TS=a.error?[]:(a.data||[]);if(a.error)console.warn("truck_schedules unavailable",a.error);
-    SCHED2=b.error?[]:(b.data||[]);NP=c.error?[]:(c.data||[]);MSG=d.error?[]:(d.data||[]);SWS=e.error?[]:(e.data||[]);VST=f.error?[]:(f.data||[]);TE_OK=!g.error;TE=g.error?[]:(g.data||[]);if(g.error)console.warn("driver_truck_events unavailable — using truck switches",g.error);PTM=h.error?[]:(h.data||[]);
+    SCHED2=b.error?[]:(b.data||[]);NP=c.error?[]:(c.data||[]);MSG=d.error?[]:(d.data||[]);SWS=e.error?[]:(e.data||[]);VST=f.error?[]:(f.data||[]);TE_OK=!g.error;TE=g.error?[]:(g.data||[]);if(g.error)console.warn("driver_truck_events unavailable — using truck switches",g.error);PTM=h.error?[]:(h.data||[]);PTS=k.error?[]:(k.data||[]);
   }catch(e){console.warn("v4 data unavailable",e)}
 }
 window.SHIFT_fetchV4=fetchV4;
@@ -788,6 +788,12 @@ function srcInfo(d){
   return r;
 }
 window.SHIFT_srcInfo=srcInfo;
+/* v4.7.1: pre-trip badge (latest pre-trip of the board date) -> Pre-trips page */
+function ptBadge(d){
+  const p=PTS.filter(x=>Number(x.driver_id)===Number(d)).slice(-1)[0];if(!p||!window.SHIFT_ptIssues)return "";
+  const r=SHIFT_ptIssues(p),t=r.ok?"All checklist items OK":r.items.map(i=>i.text).join(" · ");
+  return `<a class="pt-badge ${r.sev}" href="pretrips.html?id=${p.id}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="${esc(t)}">${r.ok?"✅ Pre-trip OK":"⚠ Pre-trip issues"}</a>`;
+}
 function liveRow(v){return typeof SHIFT_liveRow==="function"?SHIFT_liveRow(v):null}
 function truckLine(v){
   if(v==null)return `<span class="sdot"></span><span>No truck today</span>`;
@@ -817,7 +823,7 @@ function driverCard43(d){
   let hist=(done.length?`<details class="done-fold" ${fo("dd"+id)} ${tg("dd"+id)}><summary>✓ ${done.length} done today</summary>${done.sort((a,b)=>new Date(b.completed_at||0)-new Date(a.completed_at||0)).map(taskCard).join("")}</details>`:"")+
     (ups.length?`<details class="truck-stops" ${fo("ds"+id)} ${tg("ds"+id)}><summary>📍 ${ups.length} detected stop${ups.length>1?"s":""} · last ${esc(stopName(ups[ups.length-1]))} ${esc(clk(ups[ups.length-1].arrived_at))}</summary>${ups.map(stopRow).join("")}</details>`:"");
   menu.push(`<button type="button" class="mini" onclick="openDriverSchedule()">🗓 Driver Schedule</button>`);
-  return `<section class="driver dcard" data-driver-card="${id}"><div class="driver-head"><div style="min-width:0"><div class="dname">${esc(d.name)}</div><div class="dtruck" title="${esc(lb.addr||"")}">${truckLine(v)}</div>${(()=>{const si=srcInfo(id);return (si.label?`<div class="dsrc ${si.cls}" title="${esc(si.title)}">${esc(si.label)}</div>`:"")+(si.warn?`<div class="dsrc-warn">${esc(si.warn)}</div>`:"")})()}</div>${moreMenu(menu.join(""),"d"+id)}</div><div class="driver-routes" data-dcard="${id}" data-drop-dcard="${id}">${active.length?active.map(taskCard).join(""):`<div class="empty">Drop a task here</div>`}</div>${hist?`<div class="card-hist">${hist}</div>`:""}</section>`;
+  return `<section class="driver dcard" data-driver-card="${id}"><div class="driver-head"><div style="min-width:0"><div class="dname">${esc(d.name)}</div><div class="dtruck" title="${esc(lb.addr||"")}">${truckLine(v)}</div>${(()=>{const si=srcInfo(id);return (si.label?`<div class="dsrc ${si.cls}" title="${esc(si.title)}">${esc(si.label)}</div>`:"")+(si.warn?`<div class="dsrc-warn">${esc(si.warn)}</div>`:"")+ptBadge(id)})()}</div>${moreMenu(menu.join(""),"d"+id)}</div><div class="driver-routes" data-dcard="${id}" data-drop-dcard="${id}">${active.length?active.map(taskCard).join(""):`<div class="empty">Drop a task here</div>`}</div>${hist?`<div class="card-hist">${hist}</div>`:""}</section>`;
 }
 function bottom43(onIds){
   let off=(drivers||[]).filter(d=>!msgDrv(d)&&d.active!==false&&!onIds.includes(Number(d.id))&&(typeof driverVisibleOnBoard!=="function"||driverVisibleOnBoard(d)));
