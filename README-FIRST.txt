@@ -266,3 +266,12 @@ v4.8.0 (2026-10-16) — Map page (map.html, header → Map)
   * Google Routes/Directions API: key + billing needed; about $5 per 1,000 basic requests ($10 with traffic), monthly free credit;
     note Google terms: Google results should be shown on a Google map, not on OSM tiles.
   * OSM tile server: fine for light office use with attribution; heavy use -> a tile provider (MapTiler/Stadia, free tiers with a key).
+
+v4.8.1 (2026-10-16) — Combine into route: one return to McCook
+- New option "Return to McCook once at the end" (on by default): every drop at McCook / the start location goes on ONE final
+  return stop after the last pickup (listing each load and source task); a drop at a place that is also a later drop waits for it.
+  Example #222, #220, #224 -> Start McCook; 1 Victor; 2 Federal pickup; 3 Envelopes Only pickup; 4 McCook return (#220 4 pal + #224 3 pal).
+- Preview stops can be moved with ↑/↓ ("↺ Automatic order" resets); a drop placed before its own pickup is warned about.
+- New stops store source_task_ids / source_parts (migration v481_route_stop_sources, additive). Trigger dispatch_task_stops_source_progress:
+  when a stop is reached (arrived/done) its pickup parts set the original task In progress and its drop parts complete the original task.
+  Routes made before v4.8.1 have no source_parts and are untouched. The route itself still completes when every stop is done.

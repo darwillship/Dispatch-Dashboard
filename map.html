@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="shift-version" content="v4.8.0"><title>SHIFT Dispatch · Map</title>
+<meta name="shift-version" content="v4.8.1"><title>SHIFT Dispatch · Map</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -39,7 +39,7 @@ body.light{--bg:#f3f6fa;--card:#fff;--line:#cfdbe7;--muted:#5b7085;--txt:#0d1824
 <div id="wrap"><div id="list"><div class="sum" id="sum"></div><div id="items"></div>
 <p class="muted" style="font-size:11.5px">Same tasks as the board for this day (refreshes every 20 s). Pins: <b>A</b> = start / pickup, <b>B</b> = delivery, route stops numbered. Lines are straight lines, not driving routes. “Closest truck” = straight-line distance from the truck's last GPS point to the task's next stop (pickup, or delivery once in progress) — a hint, not drive time. Read-only page.</p></div>
 <div id="map"></div></div>
-<script src="truck-shared.js?v=4.8.0"></script>
+<script src="truck-shared.js?v=4.8.1"></script>
 <script>
 const db=supabase.createClient("https://hqhfstosclasgwgxubip.supabase.co","sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk");
 const FN="https://hqhfstosclasgwgxubip.supabase.co/functions/v1/map-geocode",KEY="sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk";

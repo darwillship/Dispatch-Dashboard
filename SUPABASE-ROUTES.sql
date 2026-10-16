@@ -105,3 +105,7 @@ left join public.vehicles sv on sv.id = s.gps_vehicle_id
 window w as (partition by s.task_id order by s.seq, s.id);
 revoke all on public.dispatch_route_stops_v from anon, authenticated;
 grant select on public.dispatch_route_stops_v to anon, authenticated;
+
+-- v4.8.1 migration v481_route_stop_sources (additive): dispatch_task_stops.source_task_ids bigint[], source_parts jsonb,
+--   AFTER UPDATE OF status trigger dispatch_task_stops_source_progress (pickup reached -> original in_progress, drop reached -> original completed;
+--   only for stops with source_parts and originals combined into that route; exception-safe).

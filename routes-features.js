@@ -334,31 +334,49 @@ document.addEventListener("click",e=>{
 const same=(a,b)=>(a.name||"").trim().toLowerCase()===(b.name||"").trim().toLowerCase()&&(a.addr||"").trim().toLowerCase()===(b.addr||"").trim().toLowerCase();
 const uniqJoin=(arr,sep)=>[...new Set(arr.map(x=>(x??"").toString().trim()).filter(Boolean))].join(sep||"; ")||null;
 /* stops copied in order from each original's pickup + delivery (or start + stops for a route);
-   back-to-back visits to the same place merge into one stop ("both" when it is a pickup and a delivery) */
-window.SHIFT_buildRoute=function(list,skipStartPickups){
+   back-to-back visits to the same place merge into one stop ("both" when it is a pickup and a delivery).
+   v4.8.1: returnOnce (default on) — every drop at McCook base / the start goes to ONE final return stop after the last
+   pickup, and a drop at a place that is also a later drop waits for that later visit. Each stop carries parts
+   [{task_id,type,pallets,material,name}] so every original task is tracked (pickup reached -> in progress, drop reached -> completed). */
+const isBaseAddr=a=>/\b8701\s+(w\.?\s+)?47th\s+st/i.test(a||"")&&/mccook/i.test(a||"");
+const samePlace=(a,b)=>{const n=x=>(x||"").toLowerCase().replace(/\b(ste|suite|unit)\b.*?(,|$)/g,"$2").replace(/[^a-z0-9]/g,"");return (isBaseAddr(a.addr)&&isBaseAddr(b.addr))||same(a,b)||(!!a.addr&&n(a.addr)===n(b.addr))};
+const partTxt=p=>`${p.type==="delivery"?"drop":"pickup"} ${p.name?p.name+" ":""}${p.pallets!=null?p.pallets+" pal ":""}(#${p.task_id})`;
+window.SHIFT_buildRoute=function(list,skipStartPickups,returnOnce=true,order=null){
   let seq=[];
   list.forEach(t=>{
-    let lbl=`#${t.id}`;
-    seq.push({name:t.pickup_name,addr:t.pickup_address,type:"pickup",material:t.material,pallets:t.pallet_qty,notes:null,src:lbl});
+    let lbl=`#${t.id}`,P=(type,pal,mat,name)=>({task_id:t.id,type:type==="delivery"?"delivery":"pickup",pallets:pal??null,material:mat||null,name:name||null});
+    seq.push({name:t.pickup_name,addr:t.pickup_address,type:"pickup",material:t.material,pallets:t.pallet_qty,notes:null,src:lbl,parts:[P("pickup",t.pallet_qty,t.material,t.pickup_name)]});
     let st=isRoute(t)?(STOPS[t.id]||[]):[];
-    if(st.length)st.forEach(s=>seq.push({name:s.location_name,addr:s.location_address,location_id:s.location_id,type:s.stop_type,material:s.material,pallets:s.pallet_qty,notes:s.notes,src:lbl}));
-    else seq.push({name:t.delivery_name,addr:t.delivery_address,type:"delivery",material:t.material,pallets:t.pallet_qty,notes:null,src:lbl});
+    if(st.length)st.forEach(s=>seq.push({name:s.location_name,addr:s.location_address,location_id:s.location_id,type:s.stop_type,material:s.material,pallets:s.pallet_qty,notes:s.notes,src:lbl,
+      parts:(s.source_parts&&s.source_parts.length?s.source_parts:[{task_id:t.id,type:s.stop_type==="delivery"?"delivery":"pickup",pallets:s.pallet_qty,material:s.material,name:s.location_name}])}));
+    else seq.push({name:t.delivery_name,addr:t.delivery_address,type:"delivery",material:t.material,pallets:t.pallet_qty,notes:null,src:lbl,parts:[P("delivery",t.pallet_qty,t.material,t.pickup_name)]});
   });
-  let origin=seq.shift();
-  if(skipStartPickups)seq=seq.filter(s=>!(s.type==="pickup"&&same(s,origin)));
+  let origin=seq.shift(),loaded=[...origin.parts];
+  if(skipStartPickups)seq=seq.filter(s=>{if(s.type==="pickup"&&samePlace(s,origin)){loaded.push(...s.parts);return false}return true});
+  if(returnOnce){
+    const home=s=>s.type==="delivery"&&(isBaseAddr(s.addr)||samePlace(s,origin));
+    let fin=seq.filter(home),rest=seq.filter(s=>!home(s));
+    // a drop that has a later drop at the same place waits for it
+    let kept=[];rest.forEach((s,i)=>{if(s.type==="delivery"&&rest.slice(i+1).some(x=>x.type==="delivery"&&samePlace(x,s))){const later=rest.slice(i+1).find(x=>x.type==="delivery"&&samePlace(x,s));later.parts=[...s.parts,...later.parts];later.pallets=((s.pallets??0)+(later.pallets??0))||later.pallets||s.pallets||null;later.material=uniqJoin([s.material,later.material]);later.src=s.src+", "+later.src;return}kept.push(s)});
+    if(fin.length){const f={...fin[fin.length-1],parts:fin.flatMap(x=>x.parts),src:fin.map(x=>x.src).join(", "),pallets:fin.reduce((a,x)=>a+(x.pallets||0),0)||null,material:uniqJoin(fin.map(x=>x.material)),notes:uniqJoin(fin.map(x=>x.notes)),finalReturn:true};kept.push(f)}
+    seq=kept;
+  }
   let out=[];
   seq.forEach(s=>{
     let last=out[out.length-1];
-    if(!last&&same(s,origin)&&s.type==="pickup")return;          // pickup at the start = loaded at the origin
-    if(last&&same(last,s)){
+    if(!last&&samePlace(s,origin)&&s.type==="pickup"){loaded.push(...s.parts);return}          // pickup at the start = loaded at the origin
+    if(last&&samePlace(last,s)){
       if(last.type!==s.type)last.type="both";
       last.material=uniqJoin([last.material,s.material]);
       last.pallets=last.type==="both"?null:((last.pallets??0)+(s.pallets??0))||last.pallets||s.pallets||null;
-      last.notes=uniqJoin([last.notes,s.notes]);last.srcs.push(s.src);last.parts.push(`${s.type} ${s.src}${s.pallets!=null?" ("+s.pallets+" pal)":""}`);
-    }else out.push({...s,srcs:[s.src],parts:[`${s.type} ${s.src}${s.pallets!=null?" ("+s.pallets+" pal)":""}`]});
+      last.notes=uniqJoin([last.notes,s.notes]);last.parts.push(...s.parts);last.finalReturn=last.finalReturn||s.finalReturn;
+    }else out.push({...s,parts:[...s.parts]});
   });
-  out.forEach(s=>{if(s.srcs.length>1)s.notes=uniqJoin([s.notes,"Combined: "+s.parts.join(", ")])});
-  return {origin,stops:out};
+  if(order&&order.length===out.length&&order.every(k=>k>=0&&k<out.length))out=order.map(k=>out[k]);   // manual reorder from the preview
+  out.forEach(s=>{s.srcs=[...new Set(s.parts.map(p=>"#"+p.task_id))];if(s.parts.length>1)s.notes=uniqJoin([s.notes,(s.finalReturn?"Return to base — ":"Combined: ")+s.parts.map(partTxt).join(" + ")])});
+  // warnings: a drop before its own pickup
+  const warn=[];out.forEach((s,i)=>s.parts.filter(p=>p.type==="delivery").forEach(p=>{const pi=out.findIndex(x=>x.parts.some(q=>q.task_id===p.task_id&&q.type==="pickup"));if(pi>i)warn.push(`#${p.task_id} is dropped (stop ${i+1}) before it is picked up (stop ${pi+1})`)}));
+  return {origin,stops:out,loaded,warn};
 };
 function combineModal(){
   let m=$("combineModal");if(m)return m;
@@ -367,13 +385,16 @@ function combineModal(){
   <div class="cmb-list" id="cmbList"></div>
   <div class="cmb-grid"><div><label>Date</label><input type="date" id="cmbDate"></div><div><label>Driver</label><select id="cmbDriver"></select></div><div><label>Truck</label><div id="cmbTruck" class="muted" style="padding:9px 2px;font-weight:800"></div></div></div>
   <label class="save-location" style="margin:0 0 6px"><input type="checkbox" id="cmbSkip" checked> Load pickups that are at the start location up front (no return trips to the start)</label>
+  <label class="save-location" style="margin:0 0 6px"><input type="checkbox" id="cmbHome" checked> Return to McCook once at the end (all drops at McCook / the start go on one final stop)</label>
   <div class="cmb-preview" id="cmbPreview"></div>
   <div class="form-actions"><button type="button" class="btn ghost" onclick="SHIFT_closeCombine()">Back</button><button type="button" class="btn primary" id="cmbCreate" onclick="SHIFT_createRoute()">Create route</button></div></div>`;
   m.onclick=e=>{if(e.target===m)SHIFT_closeCombine()};
   document.body.appendChild(m);
-  m.querySelector("#cmbDriver").onchange=cmbRefresh;m.querySelector("#cmbDate").onchange=cmbRefresh;m.querySelector("#cmbSkip").onchange=cmbRefresh;
+  m.querySelector("#cmbDriver").onchange=cmbRefresh;m.querySelector("#cmbDate").onchange=cmbRefresh;m.querySelector("#cmbSkip").onchange=()=>{CMB_ORDER=null;cmbRefresh()};m.querySelector("#cmbHome").onchange=()=>{CMB_ORDER=null;cmbRefresh()};
   return m;
 }
+let CMB_ORDER=null;
+const cmbBuild=()=>SHIFT_buildRoute(pickedTasks(),$("cmbSkip").checked,$("cmbHome").checked,CMB_ORDER);
 function pickedTasks(){return picked.map(id=>(allTasks||[]).find(x=>x.id===id)).filter(Boolean)}
 function cmbRefresh(){
   let list=pickedTasks();
@@ -381,23 +402,25 @@ function cmbRefresh(){
   let dId=$("cmbDriver").value?Number($("cmbDriver").value):null,date=$("cmbDate").value;
   let tr=dId&&typeof SHIFT_resolveTruck==="function"?SHIFT_resolveTruck(dId,date):null;
   $("cmbTruck").innerHTML=dId?(tr?`🚛 ${esc(tr.name||"Vehicle #"+tr.id)} <span class="muted" style="font-weight:600">(${tr.source==="override"?"daily truck":"default truck"} — change in Driver Schedule)</span>`:'🚛 No truck set <span class="muted" style="font-weight:600">(pick one in Driver Schedule)</span>'):"—";
-  let r=SHIFT_buildRoute(list,$("cmbSkip").checked);
-  $("cmbPreview").innerHTML=list.length<2?'<span class="muted">Pick at least two tasks.</span>':`<div>🏁 <b>Start:</b> ${esc(r.origin.name)} <span class="muted">${esc(r.origin.addr||"")}</span></div>`+r.stops.map((s,i)=>`<div>${i+1}. <b>${esc(s.name)}</b><span class="cmb-type">${esc(s.type==="both"?"pickup + delivery":s.type)}</span> <span class="muted">${esc(s.addr||"")}${s.material?" · "+esc(s.material):""}${s.pallets!=null?" · "+s.pallets+" pal":""} · from ${esc(s.srcs.join(", "))}</span></div>`).join("");
+  let r=cmbBuild(),n=r.stops.length;
+  const loads=s=>s.parts.length>1?`<div class="muted" style="padding-left:18px;font-size:11.5px">${s.finalReturn?"↩ return — ":""}${esc(s.parts.map(partTxt).join(" + "))}</div>`:"";
+  $("cmbPreview").innerHTML=list.length<2?'<span class="muted">Pick at least two tasks.</span>':`<div>🏁 <b>Start:</b> ${esc(r.origin.name)} <span class="muted">${esc(r.origin.addr||"")}${r.loaded.length>1?" · load: "+esc(r.loaded.map(p=>"#"+p.task_id).filter((x,i,a)=>a.indexOf(x)===i).join(", ")):""}</span></div>`+r.stops.map((s,i)=>`<div class="cmb-stop" style="display:flex;gap:6px;align-items:flex-start;margin:2px 0"><span style="flex:1">${i+1}. <b>${esc(s.name)}</b><span class="cmb-type">${esc(s.type==="both"?"pickup + delivery":s.type)}</span> <span class="muted">${esc(s.addr||"")}${s.material?" · "+esc(s.material):""}${s.pallets!=null?" · "+s.pallets+" pal":""} · from ${esc(s.srcs.join(", "))}</span>${loads(s)}</span><button class="mini" type="button" title="Move stop up" onclick="SHIFT_cmbStop(${i},-1)" ${i?"":"disabled"}>↑</button><button class="mini" type="button" title="Move stop down" onclick="SHIFT_cmbStop(${i},1)" ${i<n-1?"":"disabled"}>↓</button></div>`).join("")+(r.warn.length?`<div style="color:#ff9b9b;font-weight:800;margin-top:6px">⚠ ${esc(r.warn.join("; "))}</div>`:"")+(CMB_ORDER?`<div style="margin-top:6px"><button class="mini" type="button" onclick="SHIFT_cmbStop(-1,0)">↺ Automatic order</button> <span class="muted">stops moved by hand</span></div>`:"");
   $("cmbCreate").disabled=list.length<2||!r.stops.length;
 }
-window.SHIFT_cmbMove=function(i,d){if(d===0)picked.splice(i,1);else{let j=i+d;[picked[i],picked[j]]=[picked[j],picked[i]]}cbUpdate();render();if(picked.length<2)return SHIFT_closeCombine();cmbRefresh()};
+window.SHIFT_cmbStop=function(i,d){if(i<0){CMB_ORDER=null;return cmbRefresh()}const base=SHIFT_buildRoute(pickedTasks(),$("cmbSkip").checked,$("cmbHome").checked,null).stops.length;let o=CMB_ORDER&&CMB_ORDER.length===base?[...CMB_ORDER]:[...Array(base).keys()];const j=i+d;if(j<0||j>=o.length)return;[o[i],o[j]]=[o[j],o[i]];CMB_ORDER=o;cmbRefresh()};
+window.SHIFT_cmbMove=function(i,d){CMB_ORDER=null;if(d===0)picked.splice(i,1);else{let j=i+d;[picked[i],picked[j]]=[picked[j],picked[i]]}cbUpdate();render();if(picked.length<2)return SHIFT_closeCombine();cmbRefresh()};
 window.SHIFT_openCombine=function(){
   let list=pickedTasks();if(list.length<2)return cbUpdate("Pick at least two tasks.");
   let m=combineModal(),first=list[0];
   $("cmbDriver").innerHTML='<option value="">Unassigned</option>'+drivers.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join("");
   $("cmbDriver").value=first.assigned_driver_id?String(first.assigned_driver_id):"";
   $("cmbDate").value=String(first.work_date||boardDate).slice(0,10);
-  cmbRefresh();m.classList.add("show");
+  CMB_ORDER=null;cmbRefresh();m.classList.add("show");
 };
 window.SHIFT_closeCombine=function(){let m=$("combineModal");if(m)m.classList.remove("show")};
 window.SHIFT_createRoute=async function(){
   let list=pickedTasks();if(list.length<2)return;
-  let r=SHIFT_buildRoute(list,$("cmbSkip").checked);if(!r.stops.length)return alert("Nothing to route — every stop is the start location.");
+  let r=cmbBuild();if(r.warn.length&&!confirm("Check the stop order:\n"+r.warn.join("\n")+"\n\nCreate the route anyway?"))return;if(!r.stops.length)return alert("Nothing to route — every stop is the start location.");
   let btn=$("cmbCreate");btn.disabled=true;btn.textContent="Creating…";
   try{
     let first=list[0],date=$("cmbDate").value||boardDate,driver=$("cmbDriver").value?Number($("cmbDriver").value):null,last=r.stops[r.stops.length-1];
@@ -414,7 +437,7 @@ window.SHIFT_createRoute=async function(){
     let ins=await db.from("dispatch_tasks").insert(payload).select("id").single();
     if(ins.error)throw new Error("Could not create the route: "+ins.error.message);
     let newId=ins.data.id;
-    let stops=r.stops.map((s,i)=>({task_id:newId,seq:i+1,location_id:s.location_id||null,location_name:s.name||null,location_address:s.addr||null,stop_type:s.type,material:s.material||null,pallet_qty:s.pallets??null,notes:s.notes||null}));
+    let stops=r.stops.map((s,i)=>({task_id:newId,seq:i+1,location_id:s.location_id||null,location_name:s.name||null,location_address:s.addr||null,stop_type:s.type,material:s.material||null,pallet_qty:s.pallets??null,notes:s.notes||null,source_task_ids:[...new Set(s.parts.map(p=>Number(p.task_id)))],source_parts:s.parts}));
     let si=await db.from("dispatch_task_stops").insert(stops);
     if(si.error){await db.from("dispatch_tasks").delete().eq("id",newId).eq("is_route",true);throw new Error("Could not save the stops (nothing was changed): "+si.error.message)}
     let up=await db.from("dispatch_tasks").update({combined_into_task_id:newId}).in("id",list.map(t=>t.id));
