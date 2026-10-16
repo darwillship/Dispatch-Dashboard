@@ -284,3 +284,17 @@ v4.8.2 (Oct 16 2026) — map.html restyled like Verizon Connect Reveal (read-onl
   side panel on desktop: Trucks tab with All/Moving/Idling/Stopped chips + live counts, Tasks tab (same list + pins +
   closest-truck hint). Tap a truck = zoom + detail card. Refresh every 20 s. Old page kept at /tmp/map.v481.html (box only).
   Note: CARTO basemaps now need an API key (free tier, commercial use capped) so they are NOT used.
+
+v4.9.0 (Oct 16 2026) — Route planner on map.html (Route tab):
+  Plan a route task, a driver's open tasks, or tasks ticked in the Tasks tab. Stop list with drag (≡ handle, touch) and ↑/↓,
+  add (saved locations / today's addresses) and remove stops (planning only), start McCook, end McCook or last stop,
+  pickup-before-drop warning; "Best order" = exact optimisation by drive time (≤13 movable stops, else greedy + 2-opt) with
+  pickup/drop precedence. Road route drawn on the map, miles + drive time per leg and totals, + stop time (default 15 min).
+  Engine: Supabase edge function map-route -> OSRM public demo server (router.project-osrm.org; non-commercial, ≤1 req/s,
+  no guarantee) with a 7-day cache (table route_cache, service-role only) and a 40-calls/10-min cap; falls back to straight
+  line x1.3 at 30 mph (labelled). To switch to Mapbox later: add the Supabase secret MAPBOX_TOKEN (code already in map-route).
+  All estimates have NO live traffic.
+  Writes: only "Save order to route" (confirm dialog) -> dispatch_task_stops.seq of PENDING stops of that route. Nothing else.
+  "Use this order (Combine)" opens the board's Combine preview (index.html#combine=ids) with the planned order; nothing is
+  created until "Create route" is pressed there. map-geocode v2 also accepts saved-location addresses.
+  Migrations: v490_route_cache, v490_route_cache_grant (additive).

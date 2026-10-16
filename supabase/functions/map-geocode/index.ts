@@ -1,6 +1,6 @@
 // map-geocode — coordinates for the Map page (map.html). Public (verify_jwt = false), read-mostly.
 // POST { "addresses": ["..."], "dry_run": true|false }  ->  { "results": { "<address>": { lat, lon, status, source } } }
-// * Only addresses that appear on a dispatch task or route stop are looked up (anything else is ignored) — the page can't be
+// * Only addresses that appear on a dispatch task, route stop or saved location (v2) are looked up (anything else is ignored) — the page can't be
 //   used as a free geocoder.
 // * Cache first (geocode_cache, same keys as vzc-sync). Misses: SAME method as vzc-sync (geocode.ts: US Census, then OSM
 //   Nominatim bounded to Chicagoland), at most 4 per call, 1.1 s apart, and at most 30 new lookups per 10 min overall
@@ -26,13 +26,14 @@ Deno.serve(async (req) => {
   const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 
   // only addresses that are really on a task / stop
-  const [t1, t2, t3] = await Promise.all([
+  const [t1, t2, t3, t4] = await Promise.all([
     db.from("dispatch_tasks").select("pickup_address").in("pickup_address", asked),
     db.from("dispatch_tasks").select("delivery_address").in("delivery_address", asked),
     db.from("dispatch_task_stops").select("location_address").in("location_address", asked),
+    db.from("saved_locations").select("address").in("address", asked),
   ]);
-  if (t1.error || t2.error || t3.error) return json(500, { error: "lookup failed" });
-  const known = new Set<string>([...(t1.data || []).map((r: any) => r.pickup_address), ...(t2.data || []).map((r: any) => r.delivery_address), ...(t3.data || []).map((r: any) => r.location_address)]);
+  if (t1.error || t2.error || t3.error || t4.error) return json(500, { error: "lookup failed" });
+  const known = new Set<string>([...(t1.data || []).map((r: any) => r.pickup_address), ...(t2.data || []).map((r: any) => r.delivery_address), ...(t3.data || []).map((r: any) => r.location_address), ...(t4.data || []).map((r: any) => r.address)]);
   const addrs = asked.filter((a) => known.has(a));
   const keys = new Map(addrs.map((a) => [a, cacheKey(a)]));
   const { data: gc, error: ge } = await db.from("geocode_cache").select("address_norm,lat,lon,status,source,geocoded_at").in("address_norm", [...new Set(keys.values())]);

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="shift-version" content="v4.8.2"><title>SHIFT Dispatch · Map</title>
+<meta name="shift-version" content="v4.9.0"><title>SHIFT Dispatch · Map</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -51,6 +51,20 @@ button{font:inherit;color:inherit}
 .tk{border:1px solid var(--line);border-radius:10px;padding:7px 9px;margin-top:6px;font-size:13px}.tk b{font-weight:800}
 .foot{color:var(--mut);font-size:11.5px;padding:10px 16px}
 .leaflet-control-attribution{font-size:10px}
+/* route planner */
+.rp{padding:4px 0 8px}.rpl{display:flex;flex-direction:column;gap:4px;padding:6px 14px 8px;font-weight:700;font-size:12px;color:var(--mut)}.rp select,.rp input{font:inherit;font-size:14px;border:1px solid #d5dae2;border-radius:9px;padding:7px 8px;background:#fff;color:var(--ink)}
+.rps,.rpstart{display:flex;gap:8px;align-items:center;padding:7px 10px 7px 8px;border-bottom:1px solid #f0f2f5;background:#fff}.rps .mid,.rpstart .mid{flex:1;min-width:0}.rps .sb,.rpstart .sb{color:var(--mut);font-size:12px;overflow-wrap:anywhere}
+.rps.dragging{background:#eef5ff;box-shadow:0 4px 14px rgba(16,24,40,.2);position:relative;z-index:2}.rps.lk{opacity:.7}
+.rph{width:30px;height:38px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#8a94a3;cursor:grab;touch-action:none;flex:0 0 auto;user-select:none}.rph.off{cursor:default;font-size:15px}
+.rpn{width:26px;height:26px;border-radius:50%;background:#1d2430;color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);flex:0 0 auto}.rpn.lk{background:#8a94a3}.rpn.sm{box-shadow:none;border:none}
+.rpb{width:34px;height:34px;border-radius:9px;border:1px solid #d5dae2;background:#fff;font-weight:800;cursor:pointer;flex:0 0 auto}.rpb.x{color:#b42318}
+.rpt{font-size:10.5px;font-weight:800;border-radius:6px;padding:1px 6px;background:#eef1f5;color:#465264;text-transform:uppercase}.rpt.pickup{background:#e7f0ff;color:#1d4fb8}.rpt.delivery{background:#e6f6ec;color:#17733f}.rpt.lk{background:#f1f3f6;color:#6b7686}
+.rpleg{font-size:11.5px;color:var(--blue);font-weight:700;padding:3px 0 3px 46px;background:#fafbfd}
+.rpw{margin:8px 14px;padding:8px 10px;border-radius:10px;background:#fff4e5;color:#8a4b00;font-size:12.5px;font-weight:700}
+.rpopt{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:10px 14px;font-size:13px;font-weight:600}.rpopt label{display:flex;gap:6px;align-items:center}
+.rptot{margin:0 14px;padding:10px 12px;border-radius:12px;background:#f4f7fb;font-size:14.5px}.rptot .sb{color:var(--mut);font-size:12.5px}.rplab{font-size:11.5px;color:#8a4b00;font-weight:700;margin-top:3px}
+.rpact{display:flex;flex-wrap:wrap;gap:8px;padding:10px 14px}.rpbtn{border:none;border-radius:999px;padding:9px 14px;font-weight:800;background:#1d2430;color:#fff;cursor:pointer}.rpbtn.g{background:#eef1f5;color:var(--ink)}.rpbtn.p{background:#2f6fde}.rpbtn:disabled{opacity:.45;cursor:default}
+.rpmsg{margin:0 14px 6px;font-size:13px;font-weight:700;color:#17733f}.pk{width:20px;height:20px;margin:2px 0 0;flex:0 0 auto}
 @media(min-width:900px){
   :root{--h:0px}
   #sheet{left:12px;right:auto;top:70px;bottom:12px;width:400px;height:auto!important;border-radius:14px}#grab{display:none}
@@ -67,9 +81,9 @@ button{font:inherit;color:inherit}
 <div class="pop" id="popF"><h4>Show on map</h4><label><input type="checkbox" id="oTr" checked> Trucks</label><label><input type="checkbox" id="oTa" checked> Task pins</label><label><input type="checkbox" id="oOpen"> Open tasks only</label><label>Day <input type="date" id="day"></label></div>
 <div class="pop" id="popL"><h4>Map style</h4><label><input type="radio" name="bm" value="light" checked> Light</label><label><input type="radio" name="bm" value="osm"> Standard</label><label><input type="radio" name="bm" value="hot"> Humanitarian</label></div>
 <div id="sheet"><div id="grab"><i></i></div>
-<div class="tabs"><button type="button" id="tbT" class="on">Trucks</button><button type="button" id="tbK">Tasks</button><span style="flex:1"></span><span id="upd" style="color:var(--mut);font-size:11.5px;align-self:center"></span></div>
+<div class="tabs"><button type="button" id="tbT" class="on">Trucks</button><button type="button" id="tbK">Tasks</button><button type="button" id="tbR">Route</button><span style="flex:1"></span><span id="upd" style="color:var(--mut);font-size:11.5px;align-self:center"></span></div>
 <div class="chips" id="chips"></div><div id="body"></div></div>
-<script src="eta.js?v=4.8.2"></script><script src="truck-shared.js?v=4.8.2"></script>
+<script src="eta.js?v=4.9.0"></script><script src="truck-shared.js?v=4.9.0"></script>
 <script>
 const db=supabase.createClient("https://hqhfstosclasgwgxubip.supabase.co","sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk");
 const FN="https://hqhfstosclasgwgxubip.supabase.co/functions/v1/map-geocode",KEY="sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk";
@@ -144,7 +158,7 @@ async function load(){
     return {id,name:v.name,x,oos,svc:sv,k:kk.k,stale:kk.stale,deg:hdg(x&&x.heading),drv,since:sinceOf(id,kk.k,x),stops:EV.filter(e=>Number(e.vehicle_id)===id&&ctDate(e.started_at)===today).length}});
   await coords(T.flatMap((t,i)=>pointsOf(t,i+1).map(p=>p.addr)));
   $("upd").textContent=(bad?"⚠ ":"")+"Updated "+clk(Date.now());
-  drawAll();
+  drawAll();if(window.RP)RP.onData();
 }
 /* ---------- drawing ---------- */
 const qv=()=>$("q").value.trim().toLowerCase();
@@ -159,7 +173,7 @@ function drawTrucks(){gTrucks.clearLayers();TM={};if(!$("oTr").checked)return;
       .bindTooltip(esc(k.name)+(k.drv?" · "+esc(k.drv.name.split(" ")[0]):""),{direction:"top",offset:[0,-16],className:"tn"}).on("click",()=>selTruck(k.id,true));
     m.addTo(gTrucks);TM[k.id]=m;});
 }
-function drawPins(){gTasks.clearLayers();PINS={};TC={};if(!$("oTa").checked)return;const used={};
+function drawPins(){gTasks.clearLayers();PINS={};TC={};if(!$("oTa").checked||TAB==="route")return;const used={};
   T.filter(t=>!$("oOpen").checked||t.status!=="completed").forEach(t=>{const n=T.indexOf(t)+1,s=stOf(t),pts=pointsOf(t,n);
     pts.forEach(p=>{const c=ll(p.addr);if(!c||isBase(p.addr))return;const key=c.lat.toFixed(5)+","+c.lon.toFixed(5);const j=used[key]=(used[key]||0)+1,off=j>1?(j-1)*0.00018:0;
       const m=L.marker([c.lat+off,c.lon+off],{icon:L.divIcon({className:"",html:`<div class="pin ${SELT===t.id?"hl":""}" style="--c:${COL[s]}"><span>${esc(p.label)}</span></div>`,iconSize:[26,26],iconAnchor:[13,26],popupAnchor:[0,-24]})})
@@ -177,9 +191,9 @@ function trucksTab(){const c={all:TR.length,moving:0,idle:0,stopped:0};TR.forEac
   const L2=TR.filter(k=>(CHIP==="all"||k.k===CHIP)&&truckMatch(k)).sort((a,b)=>({moving:0,idle:1,stopped:2}[a.k]-{moving:0,idle:1,stopped:2}[b.k])||a.name.localeCompare(b.name));
   return L2.map(truckRow).join("")||'<div class="empty">No trucks match.</div>'}
 function taskRow(t){const n=T.indexOf(t)+1,s=stOf(t),pts=pointsOf(t,n);const e=window.SHIFT_ETA&&t.status==="in_progress"?SHIFT_ETA.forTask(t):null;
-  return `<div class="row ${SELT===t.id?"hl":""}" id="it${t.id}" onclick="selTask(${t.id},true)"><span class="num" style="--c:${COL[s]}">${n}</span><div class="mid"><div class="nm" style="font-size:14px">${esc(t.title||((t.pickup_name||"")+" → "+(t.delivery_name||"")))} <span class="st" style="color:${COL[s]}">${STL[s]}</span></div>
+  return `<div class="row ${SELT===t.id?"hl":""}" id="it${t.id}" onclick="selTask(${t.id},true)"><span class="num" style="--c:${COL[s]}">${n}</span>${t.status!=="completed"&&!t.messenger_id?`<input type="checkbox" class="pk" title="Tick to plan these tasks together in the Route tab" ${RP.picked.has(t.id)?"checked":""} onclick="event.stopPropagation();RP.togglePick(${t.id},this.checked)">`:""}<div class="mid"><div class="nm" style="font-size:14px">${esc(t.title||((t.pickup_name||"")+" → "+(t.delivery_name||"")))} <span class="st" style="color:${COL[s]}">${STL[s]}</span></div>
    ${pts.map(p=>`<div class="ln"><b>${esc(p.label)}</b> ${esc(p.name||"")} <span style="color:var(--mut)">${esc(p.addr||"")}</span>${p.addr&&!ll(p.addr)?' <span class="nogeo">· not on map</span>':""}</div>`).join("")}
-   <div class="sb">${esc(who(t))}${t.scheduled_at?" · "+esc(clk(t.scheduled_at)):""}</div>${e?`<div class="eta">🕒 ${esc(e.text)}</div>`:""}${closest(t,n)}</div></div>`}
+   <div class="sb">${esc(who(t))}${t.scheduled_at?" · "+esc(clk(t.scheduled_at)):""}${t.is_route&&t.status!=="completed"?` · <a href="#" onclick="event.preventDefault();event.stopPropagation();openPlan('r:${t.id}')">🧭 Plan route</a>`:""}</div>${e?`<div class="eta">🕒 ${esc(e.text)}</div>`:""}${closest(t,n)}</div></div>`}
 function tasksTab(){$("chips").style.display="none";const q=qv();
   const L2=T.filter(t=>(!$("oOpen").checked||t.status!=="completed")&&(!q||[t.title,t.pickup_name,t.delivery_name,t.pickup_address,t.delivery_address,who(t)].join(" ").toLowerCase().includes(q)));
   return (L2.map(taskRow).join("")||'<div class="empty">No tasks for this day.</div>')+'<div class="foot">Same tasks as the board for this day. Pins: A = start / pickup, B = delivery, route stops numbered. Lines are straight, not driving routes. “Closest truck” = straight-line distance — a hint, not drive time.</div>'}
@@ -193,13 +207,14 @@ function detail(k){const tk=truckTasks(k.id,k.drv),eta=etaFor(k);$("chips").styl
    ${eta?`<div class="eta" style="margin-top:8px">🕒 ${esc(eta)}</div>`:""}
    <div class="k">Today's tasks (${tk.length})</div>${tk.map(t=>`<div class="tk"><b>#${T.indexOf(t)+1}</b> ${esc((t.pickup_name||"")+" → "+(t.delivery_name||""))} · <span style="color:${COL[stOf(t)]};font-weight:700">${STL[stOf(t)]}</span></div>`).join("")||'<div class="sb" style="color:var(--mut)">None</div>'}
    <a class="btn" href="trucks.html">Open Trucks page ›</a></div>`}
-function drawList(){const k=SEL!=null?TR.find(x=>x.id===SEL):null;$("body").innerHTML=k&&TAB==="trucks"?detail(k):TAB==="trucks"?trucksTab():tasksTab()}
+function drawList(){if(TAB==="route"){$("chips").style.display="none";return RP.render(true)}const k=SEL!=null?TR.find(x=>x.id===SEL):null;$("body").innerHTML=k&&TAB==="trucks"?detail(k):TAB==="trucks"?trucksTab():tasksTab()}
 function drawAll(){drawPins();drawTrucks();drawList();
   if(!fitted){const all=[...TR.filter(k=>k.x&&k.x.lat!=null).map(k=>[k.x.lat,k.x.lon]),...Object.values(TC).flat().map(c=>[c.lat,c.lon])];if(all.length){fitAll(all);fitted=true}}}
 function pad(){const desk=matchMedia("(min-width:900px)").matches;return desk?{paddingTopLeft:[430,80],paddingBottomRight:[40,40]}:{paddingTopLeft:[30,70],paddingBottomRight:[30,(parseInt(getComputedStyle(document.documentElement).getPropertyValue("--h"))||170)+20]}}
 function fitAll(all){all=all||TR.filter(k=>k.x&&k.x.lat!=null).map(k=>[k.x.lat,k.x.lon]);if(all.length)map.fitBounds(all,{...pad(),maxZoom:13})}
 /* ---------- interaction ---------- */
 window.setChip=k=>{CHIP=k;drawList()};
+window.openPlan=src=>{$("tbR").onclick();RP.setSrc(src)};
 window.selTruck=function(id,zoom){SEL=id;SELT=null;TAB="trucks";tabUI();drawTrucks();drawPins();drawList();const k=TR.find(x=>x.id===id);
   if(k&&zoom&&k.x&&k.x.lat!=null){const desk=matchMedia("(min-width:900px)").matches;if(!desk&&sheetH()<innerHeight*.45)setSheet("half");
     const z=15,dx=desk?-205:0,dy=desk?0:Math.round(((desk?0:SNAP.half())-60)/2),c=map.unproject(map.project([k.x.lat,k.x.lon],z).add([dx,dy]),z);
@@ -207,8 +222,8 @@ window.selTruck=function(id,zoom){SEL=id;SELT=null;TAB="trucks";tabUI();drawTruc
 window.selTask=function(id,fromList){SELT=id;SEL=null;TAB="tasks";tabUI();drawPins();drawTrucks();drawList();const cs=TC[id]||[];
   if(fromList&&cs.length){map.fitBounds(L.latLngBounds(cs.map(c=>[c.lat,c.lon])).pad(.25),{...pad(),maxZoom:13});PINS[id]&&PINS[id][0]&&PINS[id][0].openPopup()}
   if(!fromList){const e=$("it"+id);e&&e.scrollIntoView({behavior:"smooth",block:"nearest"})}};
-function tabUI(){$("tbT").classList.toggle("on",TAB==="trucks");$("tbK").classList.toggle("on",TAB==="tasks")}
-$("tbT").onclick=()=>{TAB="trucks";SELT=null;tabUI();drawPins();drawList()};$("tbK").onclick=()=>{TAB="tasks";SEL=null;tabUI();drawTrucks();drawList()};
+function tabUI(){$("tbT").classList.toggle("on",TAB==="trucks");$("tbK").classList.toggle("on",TAB==="tasks");$("tbR").classList.toggle("on",TAB==="route");if(window.RP)RP.layerOn(TAB==="route")}
+$("tbT").onclick=()=>{TAB="trucks";SELT=null;tabUI();drawPins();drawList()};$("tbR").onclick=()=>{TAB="route";SEL=null;SELT=null;tabUI();drawPins();drawTrucks();drawList();if(!matchMedia("(min-width:900px)").matches&&sheetH()<innerHeight*.45)setSheet("half")};$("tbK").onclick=()=>{TAB="tasks";SEL=null;tabUI();drawTrucks();drawList()};
 $("q").oninput=()=>{$("sx").style.display=$("q").value?"block":"none";drawTrucks();drawList()};$("sx").onclick=()=>{$("q").value="";$("q").oninput()};
 $("q").onkeydown=e=>{if(e.key==="Enter"){const m=TR.filter(truckMatch);if(m.length===1)selTruck(m[0].id,true);$("q").blur()}};
 const pops={filt:"popF",lay:"popL"};for(const [b,p] of Object.entries(pops))$(b).onclick=e=>{e.stopPropagation();const o=$(p).classList.contains("show");document.querySelectorAll(".pop").forEach(x=>x.classList.remove("show"));document.querySelectorAll("#filt,#lay").forEach(x=>x.classList.remove("on"));if(!o){$(p).classList.add("show");$(b).classList.add("on")}};
@@ -233,4 +248,4 @@ if(!matchMedia("(min-width:900px)").matches)setSheet("peek");
 let busy=false;async function refresh(){if(busy||document.hidden)return;busy=true;try{await load()}catch(e){console.error(e);$("upd").textContent="⚠ "+e.message}finally{busy=false}}
 $("day").value=ctDate(Date.now());$("day").onchange=()=>{fitted=false;refresh()};
 refresh();setInterval(refresh,20000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh()});
-</script></body></html>
+</script><script src="route-plan.js?v=4.9.0"></script></body></html>

@@ -404,10 +404,10 @@ function cmbRefresh(){
   $("cmbTruck").innerHTML=dId?(tr?`🚛 ${esc(tr.name||"Vehicle #"+tr.id)} <span class="muted" style="font-weight:600">(${tr.source==="override"?"daily truck":"default truck"} — change in Driver Schedule)</span>`:'🚛 No truck set <span class="muted" style="font-weight:600">(pick one in Driver Schedule)</span>'):"—";
   let r=cmbBuild(),n=r.stops.length;
   const loads=s=>s.parts.length>1?`<div class="muted" style="padding-left:18px;font-size:11.5px">${s.finalReturn?"↩ return — ":""}${esc(s.parts.map(partTxt).join(" + "))}</div>`:"";
-  $("cmbPreview").innerHTML=list.length<2?'<span class="muted">Pick at least two tasks.</span>':`<div>🏁 <b>Start:</b> ${esc(r.origin.name)} <span class="muted">${esc(r.origin.addr||"")}${r.loaded.length>1?" · load: "+esc(r.loaded.map(p=>"#"+p.task_id).filter((x,i,a)=>a.indexOf(x)===i).join(", ")):""}</span></div>`+r.stops.map((s,i)=>`<div class="cmb-stop" style="display:flex;gap:6px;align-items:flex-start;margin:2px 0"><span style="flex:1">${i+1}. <b>${esc(s.name)}</b><span class="cmb-type">${esc(s.type==="both"?"pickup + delivery":s.type)}</span> <span class="muted">${esc(s.addr||"")}${s.material?" · "+esc(s.material):""}${s.pallets!=null?" · "+s.pallets+" pal":""} · from ${esc(s.srcs.join(", "))}</span>${loads(s)}</span><button class="mini" type="button" title="Move stop up" onclick="SHIFT_cmbStop(${i},-1)" ${i?"":"disabled"}>↑</button><button class="mini" type="button" title="Move stop down" onclick="SHIFT_cmbStop(${i},1)" ${i<n-1?"":"disabled"}>↓</button></div>`).join("")+(r.warn.length?`<div style="color:#ff9b9b;font-weight:800;margin-top:6px">⚠ ${esc(r.warn.join("; "))}</div>`:"")+(CMB_ORDER?`<div style="margin-top:6px"><button class="mini" type="button" onclick="SHIFT_cmbStop(-1,0)">↺ Automatic order</button> <span class="muted">stops moved by hand</span></div>`:"");
+  $("cmbPreview").innerHTML=list.length<2?'<span class="muted">Pick at least two tasks.</span>':`<div>🏁 <b>Start:</b> ${esc(r.origin.name)} <span class="muted">${esc(r.origin.addr||"")}${r.loaded.length>1?" · load: "+esc(r.loaded.map(p=>"#"+p.task_id).filter((x,i,a)=>a.indexOf(x)===i).join(", ")):""}</span></div>`+r.stops.map((s,i)=>`<div class="cmb-stop" style="display:flex;gap:6px;align-items:flex-start;margin:2px 0"><span style="flex:1">${i+1}. <b>${esc(s.name)}</b><span class="cmb-type">${esc(s.type==="both"?"pickup + delivery":s.type)}</span> <span class="muted">${esc(s.addr||"")}${s.material?" · "+esc(s.material):""}${s.pallets!=null?" · "+s.pallets+" pal":""} · from ${esc(s.srcs.join(", "))}</span>${loads(s)}</span><button class="mini" type="button" title="Move stop up" onclick="SHIFT_cmbStop(${i},-1)" ${i?"":"disabled"}>↑</button><button class="mini" type="button" title="Move stop down" onclick="SHIFT_cmbStop(${i},1)" ${i<n-1?"":"disabled"}>↓</button></div>`).join("")+(r.warn.length?`<div style="color:#ff9b9b;font-weight:800;margin-top:6px">⚠ ${esc(r.warn.join("; "))}</div>`:"")+(CMB_ORDER?`<div style="margin-top:6px"><button class="mini" type="button" onclick="SHIFT_cmbStop(-1,0)">↺ Automatic order</button> <span class="muted">${CMB_PLAN?"order from the map Route planner":"stops moved by hand"}</span></div>`:"");
   $("cmbCreate").disabled=list.length<2||!r.stops.length;
 }
-window.SHIFT_cmbStop=function(i,d){if(i<0){CMB_ORDER=null;return cmbRefresh()}const base=SHIFT_buildRoute(pickedTasks(),$("cmbSkip").checked,$("cmbHome").checked,null).stops.length;let o=CMB_ORDER&&CMB_ORDER.length===base?[...CMB_ORDER]:[...Array(base).keys()];const j=i+d;if(j<0||j>=o.length)return;[o[i],o[j]]=[o[j],o[i]];CMB_ORDER=o;cmbRefresh()};
+window.SHIFT_cmbStop=function(i,d){if(i<0){CMB_ORDER=null;CMB_PLAN=null;return cmbRefresh()}const base=SHIFT_buildRoute(pickedTasks(),$("cmbSkip").checked,$("cmbHome").checked,null).stops.length;let o=CMB_ORDER&&CMB_ORDER.length===base?[...CMB_ORDER]:[...Array(base).keys()];const j=i+d;if(j<0||j>=o.length)return;[o[i],o[j]]=[o[j],o[i]];CMB_ORDER=o;cmbRefresh()};
 window.SHIFT_cmbMove=function(i,d){CMB_ORDER=null;if(d===0)picked.splice(i,1);else{let j=i+d;[picked[i],picked[j]]=[picked[j],picked[i]]}cbUpdate();render();if(picked.length<2)return SHIFT_closeCombine();cmbRefresh()};
 window.SHIFT_openCombine=function(){
   let list=pickedTasks();if(list.length<2)return cbUpdate("Pick at least two tasks.");
@@ -415,8 +415,24 @@ window.SHIFT_openCombine=function(){
   $("cmbDriver").innerHTML='<option value="">Unassigned</option>'+drivers.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join("");
   $("cmbDriver").value=first.assigned_driver_id?String(first.assigned_driver_id):"";
   $("cmbDate").value=String(first.work_date||boardDate).slice(0,10);
-  CMB_ORDER=null;cmbRefresh();m.classList.add("show");
+  CMB_ORDER=null;CMB_PLAN=null;cmbApplyPlan();cmbRefresh();m.classList.add("show");
 };
+/* v4.9.0: "Use this order" from the map's Route planner -> localStorage "shift-route-plan" {ids,keys,at}; keys = per planned stop
+   the list of "task_id:pickup|delivery" parts. Applied only when the picked tasks are exactly the planned ones (≤ 1 h old). */
+let CMB_PLAN=null;
+function cmbApplyPlan(){try{const p=JSON.parse(localStorage.getItem("shift-route-plan")||"null");if(!p||Date.now()-p.at>3600e3)return false;
+  const ids=pickedTasks().map(t=>t.id).sort((a,b)=>a-b);if(JSON.stringify(ids)!==JSON.stringify([...p.ids].map(Number).sort((a,b)=>a-b)))return false;
+  const base=SHIFT_buildRoute(pickedTasks(),$("cmbSkip").checked,$("cmbHome").checked,null).stops;
+  const an=x=>isBaseAddr(x)?"base":(x||"").toLowerCase().replace(/\b(ste|suite|unit)\b[^,]*/g,"").replace(/[^a-z0-9]/g,"");
+  const pos=s=>{const ks=s.parts.map(q=>q.task_id+":"+q.type),at=["pickup","delivery"].filter(t=>s.type===t||s.type==="both").map(t=>"@"+an(s.addr)+":"+t);let b=1e9;
+    p.keys.forEach((k,i)=>{if(k.some(x=>ks.includes(x)))b=Math.min(b,i)});if(b===1e9)p.keys.forEach((k,i)=>{if(k.some(x=>at.includes(x)))b=Math.min(b,i)});return b===1e9?-1:b};
+  const order=base.map((s,i)=>[i,pos(s)]).sort((a,b)=>a[1]-b[1]||a[0]-b[0]).map(x=>x[0]);CMB_ORDER=order.some((x,i)=>x!==i)?order:null;CMB_PLAN=p.at;return true}catch(e){return false}}
+window.addEventListener("storage",e=>{if(e.key==="shift-route-plan"){const m=$("combineModal");if(m&&m.classList.contains("show")&&cmbApplyPlan())cmbRefresh()}});
+(function fromMap(){const h=location.hash.match(/^#combine=([\d,]+)$/);if(!h)return;const ids=h[1].split(",").map(Number);let n=0;
+  const go=()=>{if(!(typeof allTasks!=="undefined"&&allTasks&&allTasks.length)){if(++n<40)setTimeout(go,500);return}
+    history.replaceState(null,"",location.pathname+location.search);SHIFT_startCombine();
+    picked=ids.filter(id=>{const t=allTasks.find(x=>x.id===id);return t&&t.status!=="completed"&&!t.combined_into_task_id});cbUpdate(picked.length<ids.length?"Some planned tasks are done or already in a route and were left out.":"");render();
+    if(picked.length>=2)SHIFT_openCombine()};setTimeout(go,600)})();
 window.SHIFT_closeCombine=function(){let m=$("combineModal");if(m)m.classList.remove("show")};
 window.SHIFT_createRoute=async function(){
   let list=pickedTasks();if(list.length<2)return;
