@@ -1,137 +1,234 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="shift-version" content="v4.8.1"><title>SHIFT Dispatch · Map</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="shift-version" content="v4.8.2"><title>SHIFT Dispatch · Map</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-:root{--bg:#08111a;--card:#0f1a26;--line:#24384c;--muted:#8fa6ba;--txt:#e8f0f7;--in:#0b1520}
-*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;flex-direction:column}
-header{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}header h1{font-size:18px;margin:0;font-weight:900}header .sp{flex:1}
-a.btn,button,select,input{font:inherit;font-weight:800;font-size:12.5px;color:var(--txt);background:#14263a;border:1px solid var(--line);border-radius:9px;padding:5px 10px;cursor:pointer;text-decoration:none}
-.muted{color:var(--muted)}
-#wrap{flex:1;display:grid;grid-template-columns:minmax(330px,420px) 1fr;min-height:0}
-#list{overflow:auto;border-right:1px solid var(--line);padding:8px}#map{min-height:300px}
-.sum{font-size:12px;font-weight:800;color:var(--muted);margin:2px 2px 8px}
-.it{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c,#7e8b97);border-radius:10px;padding:7px 9px;margin-bottom:7px;cursor:pointer}
-.it.hl{outline:2px solid #5cc8ff;box-shadow:0 0 0 4px rgba(92,200,255,.18)}.it .top{display:flex;gap:7px;align-items:center}
-.num{flex:0 0 auto;min-width:24px;height:24px;border-radius:12px;background:var(--c,#7e8b97);color:#fff;font-weight:900;font-size:12px;display:flex;align-items:center;justify-content:center;padding:0 5px}
-.ttl{font-weight:850;flex:1;min-width:0;overflow-wrap:anywhere}.st{font-size:11px;font-weight:900;color:var(--c)}
-.ln{font-size:12px;margin-top:3px;overflow-wrap:anywhere}.ln b{font-weight:900}.sub{font-size:11.5px;color:var(--muted);margin-top:2px}.near{font-size:11.5px;margin-top:3px;color:#5cc8ff;font-weight:700}
-.nogeo{color:#e2b36b}
-.pin{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--c);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}
-.pin span{transform:rotate(45deg);color:#fff;font-weight:900;font-size:10.5px;line-height:1;white-space:nowrap}.pin.hl{outline:3px solid #5cc8ff;outline-offset:1px}
-.trk{display:flex;align-items:center;gap:4px;background:#0f1a26;color:#fff;border:2px solid #7e8b97;border-radius:14px;padding:1px 7px 1px 4px;font-weight:900;font-size:11px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.5)}
-.trk.moving{border-color:#2fd47a}.trk.idle{border-color:#f2c14e}.trk.stale{border-style:dashed;opacity:.8}.trk.oos{border-color:#ff5a5a;opacity:.7}
-.base{background:#14263a;color:#fff;border:2px solid #5cc8ff;border-radius:8px;padding:1px 6px;font-weight:900;font-size:11px;white-space:nowrap}
-.leaflet-popup-content{font:13px/1.4 system-ui,sans-serif;margin:9px 11px}.legend{background:rgba(15,26,38,.9);color:#e8f0f7;padding:4px 7px;border-radius:8px;font-size:11px;line-height:1.5}@media(max-width:800px){.legend .lt{display:none}}
-.legend i{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:4px;vertical-align:-1px}
-.tabs{display:none}
-@media(max-width:800px){#wrap{grid-template-columns:1fr;grid-template-rows:48vh 1fr}#map{order:-1;min-height:0}#list{border-right:none;border-top:1px solid var(--line)}header h1{font-size:16px}header .hide-s{display:none}}
-body.light{--bg:#f3f6fa;--card:#fff;--line:#cfdbe7;--muted:#5b7085;--txt:#0d1824;--in:#fff}body.light a.btn,body.light button,body.light select,body.light input{background:#eef4fa}
+:root{--red:#d6372b;--orange:#e9822a;--green:#1f9d55;--blue:#2f6fde;--ink:#1d2430;--mut:#6b7686;--line:#e3e7ee;--sh:0 2px 10px rgba(16,24,40,.18);--h:178px}
+*{box-sizing:border-box}html,body{height:100%;margin:0}body{font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#eef1f5;overflow:hidden}
+#map{position:fixed;inset:0;z-index:0;background:#e9edf2}
+.light-tiles{filter:saturate(.55) brightness(1.06) contrast(.92)}
+button{font:inherit;color:inherit}
+.fab{position:fixed;z-index:20;width:46px;height:46px;border-radius:50%;background:#fff;border:none;box-shadow:var(--sh);display:flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none;color:var(--ink)}
+.fab svg{width:22px;height:22px}.fab.on{background:#1d2430;color:#fff}
+#home{top:calc(12px + env(safe-area-inset-top));left:12px}
+#search{position:fixed;z-index:20;top:calc(12px + env(safe-area-inset-top));left:68px;right:68px;height:46px;background:#fff;border-radius:10px;box-shadow:var(--sh);display:flex;align-items:center;gap:8px;padding:0 12px}
+#search input{flex:1;border:none;outline:none;font-size:15px;background:none;min-width:0}#search svg{width:20px;height:20px;flex:0 0 auto}#sx{border:none;background:none;font-size:18px;color:var(--mut);cursor:pointer;display:none}
+#filt{top:calc(12px + env(safe-area-inset-top));right:12px}#lay{top:calc(68px + env(safe-area-inset-top));right:12px}
+#recenter{right:12px;bottom:calc(var(--h) + 14px);transition:bottom .2s}
+.pop{position:fixed;z-index:30;right:66px;background:#fff;border-radius:12px;box-shadow:0 6px 24px rgba(16,24,40,.25);padding:10px 12px;display:none;min-width:220px}.pop.show{display:block}
+.pop h4{margin:2px 0 8px;font-size:13px}.pop label{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:14px;cursor:pointer}.pop input[type=date]{font:inherit;border:1px solid var(--line);border-radius:8px;padding:4px 6px}
+#popF{top:calc(12px + env(safe-area-inset-top))}#popL{top:calc(68px + env(safe-area-inset-top))}
+/* sheet */
+#sheet{position:fixed;z-index:15;left:0;right:0;bottom:0;height:var(--h);background:#fff;border-radius:16px 16px 0 0;box-shadow:0 -2px 14px rgba(16,24,40,.16);display:flex;flex-direction:column;transition:height .2s;padding-bottom:env(safe-area-inset-bottom)}
+#sheet.drag{transition:none}#grab{padding:8px 0 4px;cursor:grab;touch-action:none;flex:0 0 auto}#grab i{display:block;width:40px;height:5px;border-radius:3px;background:#c9ced6;margin:0 auto}
+.tabs{display:flex;gap:18px;padding:2px 16px 0;border-bottom:1px solid var(--line);flex:0 0 auto}.tabs button{border:none;background:none;padding:8px 0;font-weight:700;color:var(--mut);cursor:pointer;border-bottom:3px solid transparent}.tabs button.on{color:var(--ink);border-color:var(--ink)}
+.chips{display:flex;gap:8px;padding:10px 14px;overflow-x:auto;flex:0 0 auto;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;border:1px solid #d5dae2;background:#fff;border-radius:999px;padding:7px 15px;font-weight:600;font-size:15px;cursor:pointer;white-space:nowrap}.chip.on{background:#111;color:#fff;border-color:#111}
+#body{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:0 0 12px}
+.row{display:flex;gap:11px;align-items:flex-start;padding:10px 14px;border-bottom:1px solid #f0f2f5;cursor:pointer}.row:hover{background:#f7f9fb}.row.hl{background:#eef5ff}
+.row .ic{flex:0 0 auto;margin-top:2px}.row .mid{flex:1;min-width:0}.row .nm{font-weight:700;font-size:15px}.row .sb{color:var(--mut);font-size:12.5px;overflow-wrap:anywhere}.row .st{font-size:12.5px;font-weight:700}
+.st.moving{color:var(--green)}.st.idle{color:var(--orange)}.st.stopped{color:var(--red)}.st.stale{color:var(--mut)}
+.eta{font-size:12.5px;color:var(--blue);font-weight:700}.oos{font-size:11px;font-weight:800;color:#a33;background:#fde8e6;border-radius:6px;padding:1px 6px;margin-left:4px}
+.empty{color:var(--mut);padding:16px;text-align:center}
+/* truck icons */
+.ti{width:34px;height:34px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}
+.ti.stopped{background:var(--red)}.ti.idle{background:var(--orange)}.ti.moving{background:var(--green)}.ti.stale{opacity:.6}.ti.sel{box-shadow:0 0 0 4px rgba(47,111,222,.45),0 1px 5px rgba(0,0,0,.35)}
+.ti .sq{width:11px;height:11px;background:#fff;border-radius:1.5px}.ti .pa{display:flex;gap:3px}.ti .pa b{width:4px;height:12px;background:#fff;border-radius:1px}.ti svg{width:16px;height:16px}
+.ti.sm{width:26px;height:26px;border-width:2px}.ti.sm .sq{width:9px;height:9px}.ti.sm .pa b{height:9px;width:3px}.ti.sm svg{width:13px;height:13px}
+.leaflet-tooltip.tn{font-weight:700;font-size:12px;padding:2px 7px;border-radius:6px}
+/* task pins + list */
+.pin{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--c);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
+.pin span{transform:rotate(45deg);color:#fff;font-weight:800;font-size:10.5px;line-height:1;white-space:nowrap}.pin.hl{outline:3px solid #2f6fde;outline-offset:1px}
+.base{background:#fff;color:#1d2430;border:2px solid #2f6fde;border-radius:8px;padding:1px 6px;font-weight:800;font-size:11px;white-space:nowrap;box-shadow:var(--sh)}
+.num{min-width:24px;height:24px;border-radius:12px;background:var(--c);color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;padding:0 5px}
+.ln{font-size:12.5px;overflow-wrap:anywhere}.ln b{font-weight:800}.near{font-size:12px;color:var(--blue);font-weight:600;margin-top:2px}.nogeo{color:#b7791f}
+/* detail */
+.det{padding:4px 16px 16px}.det h2{margin:0;font-size:20px}.det .k{color:var(--mut);font-size:12px;font-weight:600;margin-top:10px}.det .v{font-size:14.5px}
+.det .grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px}.back{border:none;background:#f1f3f6;border-radius:999px;padding:6px 12px;font-weight:700;cursor:pointer;margin:2px 0 8px}
+.det a.btn{display:inline-block;margin-top:12px;background:#1d2430;color:#fff;border-radius:999px;padding:8px 14px;font-weight:700;text-decoration:none}
+.tk{border:1px solid var(--line);border-radius:10px;padding:7px 9px;margin-top:6px;font-size:13px}.tk b{font-weight:800}
+.foot{color:var(--mut);font-size:11.5px;padding:10px 16px}
+.leaflet-control-attribution{font-size:10px}
+@media(min-width:900px){
+  :root{--h:0px}
+  #sheet{left:12px;right:auto;top:70px;bottom:12px;width:400px;height:auto!important;border-radius:14px}#grab{display:none}
+  #search{right:auto;width:330px}#recenter{bottom:24px}.leaflet-bottom.leaflet-right .leaflet-control-zoom{margin-bottom:62px;margin-right:16px}.leaflet-bottom.leaflet-left{left:420px}
+}
 </style></head>
 <body>
-<header><h1>🗺 Map</h1><span class="muted" id="upd">Loading…</span><span class="sp"></span>
-<label class="muted" style="font-weight:800;font-size:12px">Day <input type="date" id="day"></label>
-<select id="fs" title="Which tasks"><option value="">All tasks</option><option value="open">Open only</option></select>
-<label class="muted hide-s" style="font-weight:800;font-size:12px"><input type="checkbox" id="ftr" checked> Trucks</label>
-<a class="btn" href="index.html">← Board</a><a class="btn hide-s" href="trucks.html">Trucks</a></header>
-<div id="wrap"><div id="list"><div class="sum" id="sum"></div><div id="items"></div>
-<p class="muted" style="font-size:11.5px">Same tasks as the board for this day (refreshes every 20 s). Pins: <b>A</b> = start / pickup, <b>B</b> = delivery, route stops numbered. Lines are straight lines, not driving routes. “Closest truck” = straight-line distance from the truck's last GPS point to the task's next stop (pickup, or delivery once in progress) — a hint, not drive time. Read-only page.</p></div>
-<div id="map"></div></div>
-<script src="truck-shared.js?v=4.8.1"></script>
+<div id="map"></div>
+<a class="fab" id="home" href="index.html" title="Back to the dispatch board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></a>
+<div id="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="q" placeholder="Search for vehicles and drivers" autocomplete="off"><button id="sx" type="button" aria-label="Clear">×</button></div>
+<button class="fab" id="filt" type="button" title="Show / hide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="#fff"/><circle cx="15" cy="12" r="2" fill="#fff"/><circle cx="8" cy="18" r="2" fill="#fff"/></svg></button>
+<button class="fab" id="lay" type="button" title="Map style"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 16l9 5 9-5" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+<button class="fab" id="recenter" type="button" title="Recenter on all trucks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 3L3 10.5l7.5 3 3 7.5L21 3z"/></svg></button>
+<div class="pop" id="popF"><h4>Show on map</h4><label><input type="checkbox" id="oTr" checked> Trucks</label><label><input type="checkbox" id="oTa" checked> Task pins</label><label><input type="checkbox" id="oOpen"> Open tasks only</label><label>Day <input type="date" id="day"></label></div>
+<div class="pop" id="popL"><h4>Map style</h4><label><input type="radio" name="bm" value="light" checked> Light</label><label><input type="radio" name="bm" value="osm"> Standard</label><label><input type="radio" name="bm" value="hot"> Humanitarian</label></div>
+<div id="sheet"><div id="grab"><i></i></div>
+<div class="tabs"><button type="button" id="tbT" class="on">Trucks</button><button type="button" id="tbK">Tasks</button><span style="flex:1"></span><span id="upd" style="color:var(--mut);font-size:11.5px;align-self:center"></span></div>
+<div class="chips" id="chips"></div><div id="body"></div></div>
+<script src="eta.js?v=4.8.2"></script><script src="truck-shared.js?v=4.8.2"></script>
 <script>
 const db=supabase.createClient("https://hqhfstosclasgwgxubip.supabase.co","sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk");
 const FN="https://hqhfstosclasgwgxubip.supabase.co/functions/v1/map-geocode",KEY="sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk";
-if(localStorage.getItem("shift-theme")==="light")document.body.classList.add("light");
 const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const COL={pending:"#7e8b97",assigned:"#3b82f6",in_progress:"#f59e0b",completed:"#22a35a"},STL={pending:"Pending",assigned:"Assigned",in_progress:"In progress",completed:"Done"};
+const COL={pending:"#8a94a3",assigned:"#2f6fde",in_progress:"#e9822a",completed:"#1f9d55"},STL={pending:"Pending",assigned:"Assigned",in_progress:"In progress",completed:"Done"};
 const stOf=t=>t.status==="completed"?"completed":t.status==="in_progress"?"in_progress":(t.assigned_driver_id||t.messenger_id||t.vehicle_id)?"assigned":"pending";
 const BASE={lat:41.80335,lon:-87.83656},isBase=a=>/8701\s+47th\s+st/i.test(a||"");
-const ymdCT=t=>ctDate(t);
-/* ---------- coordinates: map-geocode (cache first, same geocoder as vzc-sync); remembered in this browser ---------- */
+const ago=t=>{const m=Math.round((Date.now()-Date.parse(t))/60000);return m<1?"just now":m<60?m+" min ago":m<1440?Math.floor(m/60)+" h "+(m%60)+" min ago":Math.floor(m/1440)+" d ago"};
+const sinceTxt=o=>{if(!o)return "";const t=o.t;const d=ctDate(t)===ctDate(Date.now())?"":new Date(t).toLocaleDateString("en-US",{timeZone:"America/Chicago",month:"short",day:"numeric"})+" ";return (o.rep?"reported ":"since ")+d+clk(t)};
+/* ---------- coordinates (map-geocode: cache first, same geocoder as vzc-sync) ---------- */
 const GKEY="shift-map-geo-v1";let GEO={};try{GEO=JSON.parse(localStorage.getItem(GKEY)||"{}")}catch(e){}
-const asked={};  // address -> last time asked this session (no hammering on misses)
-async function coords(addrs){
-  const now=Date.now(),need=[...new Set(addrs.filter(a=>a&&!isBase(a)&&!(GEO[a]&&GEO[a].lat!=null)&&!(GEO[a]&&GEO[a].status==="not_found"&&now-GEO[a].at<864e5)&&!(asked[a]&&now-asked[a]<600e3)))];
+const asked={};
+async function coords(addrs){const now=Date.now(),need=[...new Set(addrs.filter(a=>a&&!isBase(a)&&!(GEO[a]&&GEO[a].lat!=null)&&!(GEO[a]&&GEO[a].status==="not_found"&&now-GEO[a].at<864e5)&&!(asked[a]&&now-asked[a]<600e3)))];
   if(!need.length)return;need.forEach(a=>asked[a]=now);
   try{const r=await fetch(FN,{method:"POST",headers:{"Content-Type":"application/json",apikey:KEY,Authorization:"Bearer "+KEY},body:JSON.stringify({addresses:need.slice(0,60)})});
     const j=await r.json();for(const [a,v] of Object.entries(j.results||{}))if(v.status==="ok"||v.status==="not_found")GEO[a]={lat:v.lat,lon:v.lon,status:v.status,at:now};
-    localStorage.setItem(GKEY,JSON.stringify(GEO));if(j.geocoded)setTimeout(refresh,1500);
-  }catch(e){console.warn("geocode",e)}
-}
+    localStorage.setItem(GKEY,JSON.stringify(GEO));if(j.geocoded)setTimeout(refresh,1500)}catch(e){console.warn("geocode",e)}}
 const ll=a=>isBase(a)?BASE:(GEO[a]&&GEO[a].lat!=null?GEO[a]:null);
 /* ---------- map ---------- */
-const map=L.map("map",{zoomControl:true}).setView([41.85,-87.85],10);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
+const map=L.map("map",{zoomControl:false,attributionControl:true}).setView([41.86,-87.85],10);
+if(matchMedia("(min-width:900px)").matches)L.control.zoom({position:"bottomright"}).addTo(map);
+const OSM_ATTR='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const BM={light:()=>L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:OSM_ATTR,className:"light-tiles"}),
+  osm:()=>L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:OSM_ATTR}),
+  hot:()=>L.tileLayer("https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",{maxZoom:19,subdomains:"abc",attribution:OSM_ATTR+', tiles by <a href="https://www.hotosm.org/">HOT</a> / <a href="https://openstreetmap.fr">OSM France</a>'})};
+let tiles=null;function setBase(k){if(tiles)map.removeLayer(tiles);tiles=BM[k]().addTo(map);localStorage.setItem("shift-map-base",k)}
+const bm0=localStorage.getItem("shift-map-base")||"light";document.querySelector(`input[name=bm][value=${bm0}]`).checked=true;setBase(bm0);
 const gTasks=L.layerGroup().addTo(map),gTrucks=L.layerGroup().addTo(map);
 L.marker([BASE.lat,BASE.lon],{icon:L.divIcon({className:"",html:'<div class="base">🏠 Darwill McCook</div>',iconSize:null,iconAnchor:[50,10]}),zIndexOffset:-100}).addTo(map).bindPopup("<b>Darwill McCook</b><br>8701 47th St, McCook (base)");
-const lg=L.control({position:"topright"});lg.onAdd=()=>{const d=L.DomUtil.create("div","legend");d.innerHTML=Object.keys(COL).map(k=>`<i style="background:${COL[k]}"></i>${STL[k]}`).join(" ")+'<span class="lt"><br>🚚 outline: green moving · yellow idling · grey parked · dashed = GPS stale</span>';return d};lg.addTo(map);
-let TC={},PINS={},SEL=null,fitted=false,T=[],STOPS=[];
+/* ---------- state ---------- */
+let T=[],STOPS=[],EV=[],TC={},PINS={},SEL=null,SELT=null,TAB="trucks",CHIP="all",fitted=false,TR=[],TM={};
+const HD={n:0,north:0,ne:45,"north east":45,northeast:45,e:90,east:90,se:135,"south east":135,southeast:135,s:180,south:180,sw:225,"south west":225,southwest:225,w:270,west:270,nw:315,"north west":315,northwest:315};
+const hdg=h=>{if(h==null||h==="")return null;const n=Number(h);if(Number.isFinite(n))return n;const k=String(h).trim().toLowerCase();return k in HD?HD[k]:null};
 const hav=(a,b)=>{const R=3958.8,r=x=>x*Math.PI/180,dl=r(b.lat-a.lat),dn=r(b.lon-a.lon),s=Math.sin(dl/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(s))};
-function liveCls(x,oos){if(oos)return "oos";if(!x)return "stale";const now=Date.now(),upd=Date.parse(x.updated_at||0),rep=Date.parse(x.reported_at||0);
-  const stale=!upd||now-upd>10*60e3||((x.state==="Moving"||x.state==="Idle")&&now-rep>10*60e3);return stale?"stale":x.state==="Moving"?"moving":x.state==="Idle"?"idle":"parked"}
-const LIVE_T={moving:"Moving",idle:"Idling (engine on)",parked:"Parked",stale:"GPS stale",oos:"Out of service"};
-function pointsOf(t,n){ // [{label,addr,kind}]
-  const st=STOPS.filter(s=>Number(s.task_id)===Number(t.id)).sort((a,b)=>(a.seq||0)-(b.seq||0));
+function kindOf(x){if(!x)return {k:"stopped",stale:true};const now=Date.now(),rep=Date.parse(x.reported_at||0),upd=Date.parse(x.updated_at||0);
+  const st=/mov/i.test(x.state||"")?"moving":/idle/i.test(x.state||"")?"idle":"stopped";const stale=!upd||now-upd>10*60e3||(st!=="stopped"&&now-rep>15*60e3);return {k:st,stale}}
+const KL={moving:"Moving",idle:"Idling",stopped:"Stopped"};
+function icon(k,stale,deg,sm,sel){const inner=k==="stopped"?'<span class="sq"></span>':k==="idle"?'<span class="pa"><b></b><b></b></span>':`<svg viewBox="0 0 24 24" style="transform:rotate(${deg??0}deg)"><path d="M12 3l7 17-7-4-7 4z" fill="#fff"/></svg>`;
+  return `<div class="ti ${k} ${stale?"stale":""} ${sm?"sm":""} ${sel?"sel":""}">${inner}</div>`}
+function whoOn(v){const t=Date.now(),SH=D.SH||[];const c=SH.filter(s=>s.start!=null&&truckOf(s,SH)===v&&t>=s.start&&t<s.end);return c.length===1?c[0]:null}
+function sinceOf(id,k,x){const ev=EV.filter(e=>Number(e.vehicle_id)===id).sort((a,b)=>Date.parse(b.started_at)-Date.parse(a.started_at));
+  if(k==="moving"){const e=ev.find(e=>e.ended_at);return e?{t:e.ended_at}:null}
+  const want=k==="idle"?"idle":"engine_off",e=ev[0],rep=Date.parse(x?.reported_at||0);
+  if(e&&e.kind===want&&Date.parse(e.started_at)<=rep+60e3&&(!e.ended_at||Date.parse(e.ended_at)>=rep-120e3))return {t:e.started_at};
+  return x?.reported_at?{t:x.reported_at,rep:true}:null}
+function truckTasks(id,drv){return T.filter(t=>!t.messenger_id&&(Number(t.vehicle_id)===id||(t.vehicle_id==null&&drv&&Number(t.assigned_driver_id)===Number(drv.driverId)&&t.status!=="completed")||(t.status==="completed"&&t.vehicle_id==null&&Number(t.gps_vehicle_id)===id)))}
+function pointsOf(t,n){const st=STOPS.filter(s=>Number(s.task_id)===Number(t.id)).sort((a,b)=>(a.seq||0)-(b.seq||0));
   if(t.is_route&&st.length)return [{label:n+"A",addr:t.pickup_address,name:t.pickup_name,kind:"Start"},...st.map((s,i)=>({label:n+"."+(i+1),addr:s.location_address,name:s.location_name,kind:"Stop "+(i+1)+(s.stop_type?" ("+s.stop_type+")":"")})),...(t.delivery_address?[{label:n+"B",addr:t.delivery_address,name:t.delivery_name,kind:"End"}]:[])];
-  return [{label:n+"A",addr:t.pickup_address,name:t.pickup_name,kind:"Start / pickup"},{label:n+"B",addr:t.delivery_address,name:t.delivery_name,kind:"Delivery"}];
-}
+  return [{label:n+"A",addr:t.pickup_address,name:t.pickup_name,kind:"Start / pickup"},{label:n+"B",addr:t.delivery_address,name:t.delivery_name,kind:"Delivery"}]}
+const dName=id=>(D.drivers.find(d=>d.id===Number(id))||{}).name||"",vName=id=>(D.veh.find(v=>Number(v.id)===Number(id))||{}).name||"";
+function who(t){if(t.messenger_id){const m=(D.msg||[]).find(x=>Number(x.id)===Number(t.messenger_id));return "📦 "+(m?m.company:"Messenger")}
+  const d=t.assigned_driver_id?dName(t.assigned_driver_id):"",v=t.vehicle_id!=null?vName(t.vehicle_id):"";return [d&&"👤 "+d,v&&"🚛 "+v].filter(Boolean).join(" · ")||"Unassigned"}
+function closest(t,n){if(t.status==="completed"||t.messenger_id)return "";const pts=pointsOf(t,n),target=t.status==="in_progress"?pts[pts.length-1]:pts[0],c=target&&ll(target.addr);if(!c)return "";
+  const r=TR.filter(k=>!k.oos&&k.x&&k.x.lat!=null&&Date.now()-Date.parse(k.x.reported_at||0)<12*3600e3).map(k=>({k,d:hav({lat:k.x.lat,lon:k.x.lon},c)})).sort((a,b)=>a.d-b.d)[0];
+  return r?`<div class="near" title="Straight-line distance from the truck's last GPS point — not drive time">📏 Closest truck to ${t.status==="in_progress"?"delivery":"start"}: ${esc(r.k.name)} ${r.d<10?r.d.toFixed(1):Math.round(r.d)} mi (straight line)</div>`:""}
+/* ---------- load (every 20 s) ---------- */
 async function load(){
-  const day=$("day").value||ymdCT(Date.now()),prev=addDays(day,-1);
+  const day=$("day").value||ctDate(Date.now()),prev=addDays(day,-1),today=ctDate(Date.now());
   const q=await Promise.all([db.from("drivers").select("id,name,active,is_messenger").order("id"),db.from("dispatch_tasks").select("*").order("sort_order"),
     db.from("vehicles").select("*").order("id"),db.from("vehicle_live_location").select("*"),db.from("vehicle_status").select("*"),
     db.from("truck_schedules").select("*"),db.from("driver_schedule").select("*").gte("work_date",prev).lte("work_date",day),db.from("truck_switches").select("*").eq("active",true).gte("work_date",prev).lte("work_date",day),
-    db.rpc("driver_truck_events",{p_from:prev,p_to:day}),db.from("messengers").select("id,company")]);
-  const bad=q.map((r,i)=>r.error?i:null).filter(x=>x!=null);
-  let tasks;[D.drivers,tasks,D.veh,D.live,D.svc,D.ts,D.sched,D.sw,D.te,D.msg]=q.map(r=>r.data||[]);D.teOk=!q[8].error;D.drivers=D.drivers.map(d=>({...d,id:Number(d.id)}));
-  // same day filter as the board (index.html load())
-  T=tasks.filter(t=>!t.combined_into_task_id&&(t.work_date||(!t.scheduled_at?ymdCT(Date.now()):ymdCT(t.scheduled_at)))===day);
+    db.rpc("driver_truck_events",{p_from:prev,p_to:day}),db.from("messengers").select("id,company"),
+    db.from("vehicle_stop_events").select("vehicle_id,started_at,ended_at,kind").gte("work_date",addDays(today,-1)).lte("work_date",today).is("superseded_at",null)]);
+  const bad=q.filter(r=>r.error).length;let tasks;
+  [D.drivers,tasks,D.veh,D.live,D.svc,D.ts,D.sched,D.sw,D.te,D.msg,EV]=q.map(r=>r.data||[]);D.teOk=!q[8].error;D.drivers=D.drivers.map(d=>({...d,id:Number(d.id)}));
+  T=tasks.filter(t=>!t.combined_into_task_id&&(t.work_date||(!t.scheduled_at?ctDate(Date.now()):ctDate(t.scheduled_at)))===day);
   const rids=T.filter(t=>t.is_route).map(t=>t.id);STOPS=[];if(rids.length){const r=await db.from("dispatch_task_stops").select("*").in("task_id",rids);STOPS=r.data||[]}
   D.SH=[...shiftsFor(prev),...shiftsFor(day)];
   const ord={in_progress:0,assigned:1,pending:2,completed:3};T.sort((a,b)=>ord[stOf(a)]-ord[stOf(b)]||(a.sort_order||0)-(b.sort_order||0)||a.id-b.id);
+  try{await SHIFT_ETA.refresh(db,T)}catch(e){}
+  TR=D.veh.filter(v=>v.active!==false).map(v=>{const id=Number(v.id),x=D.live.find(l=>Number(l.vehicle_id)===id),sv=D.svc.find(s=>Number(s.vehicle_id)===id),oos=!!(sv&&sv.status&&sv.status!=="in_service"),kk=kindOf(x),drv=whoOn(id);
+    return {id,name:v.name,x,oos,svc:sv,k:kk.k,stale:kk.stale,deg:hdg(x&&x.heading),drv,since:sinceOf(id,kk.k,x),stops:EV.filter(e=>Number(e.vehicle_id)===id&&ctDate(e.started_at)===today).length}});
   await coords(T.flatMap((t,i)=>pointsOf(t,i+1).map(p=>p.addr)));
-  draw();$("upd").textContent=(bad.length?"⚠ some data missing · ":"")+"updated "+clk(Date.now());
+  $("upd").textContent=(bad?"⚠ ":"")+"Updated "+clk(Date.now());
+  drawAll();
 }
-const dName=id=>(D.drivers.find(d=>d.id===Number(id))||{}).name||"",vName=id=>(D.veh.find(v=>Number(v.id)===Number(id))||{}).name||"";
-function who(t){if(t.messenger_id){const m=(D.msg||[]).find(x=>Number(x.id)===Number(t.messenger_id));return "📦 "+(m?m.company:"Messenger")}
-  const d=t.assigned_driver_id?dName(t.assigned_driver_id):"";const v=t.vehicle_id!=null?vName(t.vehicle_id):"";return [d&&"👤 "+d,v&&"🚛 "+v].filter(Boolean).join(" · ")||"Unassigned"}
-function trucksLive(){return D.veh.filter(v=>v.active!==false).map(v=>{const id=Number(v.id),x=D.live.find(l=>Number(l.vehicle_id)===id),sv=D.svc.find(s=>Number(s.vehicle_id)===id),oos=!!(sv&&sv.status&&sv.status!=="in_service");return {id,name:v.name,x,oos,cls:liveCls(x,oos),dn:driverNow(id,D.SH)}})}
-function closest(t,n,TR){
-  if(t.status==="completed"||t.messenger_id)return "";
-  const pts=pointsOf(t,n),target=t.status==="in_progress"?(pts.find(p=>/Delivery|End/.test(p.kind))||pts[pts.length-1]):pts[0];const c=target&&ll(target.addr);if(!c)return "";
-  const r=TR.filter(k=>!k.oos&&k.x&&k.x.lat!=null&&Date.now()-Date.parse(k.x.reported_at||0)<12*3600e3).map(k=>({k,d:hav({lat:k.x.lat,lon:k.x.lon},c)})).sort((a,b)=>a.d-b.d)[0];
-  return r?`<div class="near" title="Straight-line distance from the truck's last GPS point (${esc(clk(r.k.x.reported_at))}) to ${esc(target.kind.toLowerCase())} — not drive time">📏 Closest truck to ${esc(target.kind.split(" ")[0].toLowerCase())}: ${esc(r.k.name)} ${r.d<10?r.d.toFixed(1):Math.round(r.d)} mi (straight line)${r.k.dn&&r.k.dn.name?" · "+esc(r.k.dn.name):""}</div>`:"";
+/* ---------- drawing ---------- */
+const qv=()=>$("q").value.trim().toLowerCase();
+const truckMatch=k=>{const q=qv();return !q||(k.name+" "+(k.drv?k.drv.name:"")).toLowerCase().includes(q)};
+function drawTrucks(){gTrucks.clearLayers();TM={};if(!$("oTr").checked)return;
+  const list=TR.filter(k=>k.x&&k.x.lat!=null&&truckMatch(k)),pts=list.map(k=>map.latLngToContainerPoint([k.x.lat,k.x.lon])),grp=list.map(()=>-1);let g=0;
+  list.forEach((k,i)=>{if(grp[i]>=0)return;grp[i]=g;list.forEach((k2,j)=>{if(j>i&&grp[j]<0&&pts[i].distanceTo(pts[j])<30)grp[j]=g});g++});
+  const sm=map.getZoom()<9;
+  list.forEach((k,i)=>{const mem=list.map((_,j)=>j).filter(j=>grp[j]===grp[i]);let ll2=[k.x.lat,k.x.lon];
+    if(mem.length>1){const a=2*Math.PI*mem.indexOf(i)/mem.length,r=20;ll2=map.containerPointToLatLng(pts[mem[0]].add(L.point(Math.cos(a)*r,Math.sin(a)*r)))}
+    const m=L.marker(ll2,{icon:L.divIcon({className:"",html:icon(k.k,k.stale,k.deg,sm,SEL===k.id),iconSize:[34,34],iconAnchor:[17,17]}),zIndexOffset:SEL===k.id?1000:500,keyboard:false})
+      .bindTooltip(esc(k.name)+(k.drv?" · "+esc(k.drv.name.split(" ")[0]):""),{direction:"top",offset:[0,-16],className:"tn"}).on("click",()=>selTruck(k.id,true));
+    m.addTo(gTrucks);TM[k.id]=m;});
 }
-function draw(){
-  const fs=$("fs").value,list=T.filter(t=>fs!=="open"||t.status!=="completed");
-  const TR=trucksLive();gTasks.clearLayers();PINS={};TC={};const used={};const all=[];let noGeo=0;
-  $("items").innerHTML=list.map(t=>{const n=T.indexOf(t)+1,s=stOf(t),pts=pointsOf(t,n);
-    const miss=pts.filter(p=>p.addr&&!ll(p.addr));noGeo+=miss.length;
-    pts.forEach(p=>{const c=ll(p.addr);if(!c||isBase(p.addr))return;const k=c.lat.toFixed(5)+","+c.lon.toFixed(5);const j=used[k]=(used[k]||0)+1;const off=j>1?(j-1)*0.00018:0;
-      const m=L.marker([c.lat+off,c.lon+off],{icon:L.divIcon({className:"",html:`<div class="pin" data-t="${t.id}" style="--c:${COL[s]}"><span>${esc(p.label)}</span></div>`,iconSize:[26,26],iconAnchor:[13,26],popupAnchor:[0,-24]})})
-        .bindPopup(`<b>#${n} ${esc(p.kind)}</b> · <span style="color:${COL[s]};font-weight:800">${STL[s]}</span><br>${esc(p.name||"")}<br><span style="opacity:.75">${esc(p.addr)}</span><br>${esc(who(t))}`).on("click",()=>select(t.id,false));
-      m.addTo(gTasks);(PINS[t.id]=PINS[t.id]||[]).push(m);all.push([c.lat,c.lon]);});
-    const cs=pts.map(p=>ll(p.addr)).filter(Boolean);TC[t.id]=cs;if(cs.length>1)L.polyline(cs.map(c=>[c.lat,c.lon]),{color:COL[s],weight:3,opacity:.8,dashArray:"6 6"}).addTo(gTasks);
-    const ab=pts.map(p=>`<div class="ln"><b>${esc(p.label)}</b> ${esc(p.name||"")} <span class="muted">${esc(p.addr||"")}</span>${p.addr&&!ll(p.addr)?' <span class="nogeo" title="No map position yet (address being looked up, or not found)">· not on map</span>':""}</div>`).join("");
-    const tm=t.scheduled_at?clk(t.scheduled_at):"";
-    return `<div class="it ${SEL===t.id?"hl":""}" id="it${t.id}" style="--c:${COL[s]}" onclick="select(${t.id},true)"><div class="top"><span class="num">${n}</span><span class="ttl">${esc(t.title||((t.pickup_name||"")+" → "+(t.delivery_name||"")))}</span><span class="st">${STL[s]}</span></div>${ab}<div class="sub">${esc(who(t))}${tm?" · "+esc(tm):""}${t.task_type?" · "+esc(t.task_type):""}</div>${closest(t,n,TR)}</div>`}).join("")||'<div class="muted">No tasks for this day.</div>';
-  // trucks
-  gTrucks.clearLayers();const tused={};
-  if($("ftr").checked)for(const k of TR){if(!k.x||k.x.lat==null)continue;
-    const dn=k.dn&&k.dn.name?k.dn.name:"";const sp=k.x.speed_mph!=null&&k.cls==="moving"?" "+Math.round(k.x.speed_mph)+" mph":"";
-    L.marker([k.x.lat,k.x.lon],{icon:L.divIcon({className:"",html:`<div class="trk ${k.cls}">🚚 ${esc(k.name)}${dn?" · "+esc(dn.split(" ")[0]):""}</div>`,iconSize:null,iconAnchor:[12,12-20*((tused[k.x.lat.toFixed(3)+","+k.x.lon.toFixed(3)]=(tused[k.x.lat.toFixed(3)+","+k.x.lon.toFixed(3)]||0)+1)-1)]}),zIndexOffset:500})
-     .bindPopup(`<b>🚚 ${esc(k.name)}</b><br>Driver: ${dn?esc(dn)+(k.dn.how?` <span style="opacity:.7">(${esc(k.dn.how)})</span>`:""):'<span style="opacity:.7">no driver scheduled now</span>'}<br>${esc(LIVE_T[k.cls])}${esc(sp)}<br>Last GPS report: ${esc(when(k.x.reported_at))}<br><span style="opacity:.75">${esc(k.x.address||"")}</span>`).addTo(gTrucks);all.push([k.x.lat,k.x.lon]);}
-  const nOpen=T.filter(t=>t.status!=="completed").length;
-  $("sum").textContent=`${T.length} task${T.length===1?"":"s"} · ${nOpen} open · ${TR.filter(k=>k.cls==="moving").length} truck${TR.filter(k=>k.cls==="moving").length===1?"":"s"} moving${noGeo?` · ${noGeo} address${noGeo>1?"es":""} not on map yet`:""}`;
-  if(!fitted&&all.length){map.fitBounds(all,{padding:[30,30],maxZoom:13});fitted=true}
-  if(SEL)hlPins(SEL);
+function drawPins(){gTasks.clearLayers();PINS={};TC={};if(!$("oTa").checked)return;const used={};
+  T.filter(t=>!$("oOpen").checked||t.status!=="completed").forEach(t=>{const n=T.indexOf(t)+1,s=stOf(t),pts=pointsOf(t,n);
+    pts.forEach(p=>{const c=ll(p.addr);if(!c||isBase(p.addr))return;const key=c.lat.toFixed(5)+","+c.lon.toFixed(5);const j=used[key]=(used[key]||0)+1,off=j>1?(j-1)*0.00018:0;
+      const m=L.marker([c.lat+off,c.lon+off],{icon:L.divIcon({className:"",html:`<div class="pin ${SELT===t.id?"hl":""}" style="--c:${COL[s]}"><span>${esc(p.label)}</span></div>`,iconSize:[26,26],iconAnchor:[13,26],popupAnchor:[0,-24]})})
+        .bindPopup(`<b>#${n} ${esc(p.kind)}</b> · <span style="color:${COL[s]};font-weight:700">${STL[s]}</span><br>${esc(p.name||"")}<br><span style="opacity:.7">${esc(p.addr)}</span><br>${esc(who(t))}`).on("click",()=>selTask(t.id,false));
+      m.addTo(gTasks);(PINS[t.id]=PINS[t.id]||[]).push(m)});
+    const cs=pts.map(p=>ll(p.addr)).filter(Boolean);TC[t.id]=cs;if(cs.length>1)L.polyline(cs.map(c=>[c.lat,c.lon]),{color:COL[s],weight:3,opacity:.75,dashArray:"6 6"}).addTo(gTasks)});
 }
-function hlPins(id){document.querySelectorAll(".pin").forEach(p=>p.classList.toggle("hl",Number(p.dataset.t)===Number(id)))}
-window.select=function(id,fromList){SEL=id;document.querySelectorAll(".it").forEach(e=>e.classList.toggle("hl",e.id==="it"+id));hlPins(id);
-  const ms=PINS[id]||[],cs=TC[id]||[];if(fromList&&cs.length){const b=L.latLngBounds(cs.map(c=>[c.lat,c.lon]));map.fitBounds(b.pad(.25),{maxZoom:13});ms[0]&&ms[0].openPopup();if(innerWidth<=800)$("map").scrollIntoView({behavior:"smooth"})}
+function etaFor(k){const t=truckTasks(k.id,k.drv).find(t=>t.status==="in_progress");if(!t)return "";const e=window.SHIFT_ETA&&SHIFT_ETA.forTask({...t,vehicle_id:t.vehicle_id??k.id});return e?e.text:""}
+function truckRow(k){const st=k.stale&&k.k!=="stopped"?"GPS stale":KL[k.k],eta=etaFor(k);
+  return `<div class="row ${SEL===k.id?"hl":""}" onclick="selTruck(${k.id},true)"><div class="ic">${icon(k.k,k.stale,k.deg,false,false)}</div><div class="mid"><div class="nm">${esc(k.name)}${k.oos?`<span class="oos">${esc(SVC[k.svc.status]||"Out of service")}</span>`:""}</div>
+   <div class="sb">${k.drv?"👤 "+esc(k.drv.name):"No driver scheduled now"}</div><div class="st ${k.stale&&k.k!=="stopped"?"stale":k.k}">${esc(st)}${k.k==="moving"&&k.x&&k.x.speed_mph!=null?" · "+Math.round(k.x.speed_mph)+" mph":""} <span style="color:var(--mut);font-weight:500">${esc(sinceTxt(k.since))}</span></div>
+   <div class="sb">${esc(k.x?.address||"No GPS yet")}</div>${eta?`<div class="eta">🕒 ${esc(eta)}</div>`:""}</div></div>`}
+function trucksTab(){const c={all:TR.length,moving:0,idle:0,stopped:0};TR.forEach(k=>c[k.k]++);
+  $("chips").style.display="";$("chips").innerHTML=[["all","All"],["moving","Moving"],["idle","Idling"],["stopped","Stopped"]].map(([k,l])=>`<button type="button" class="chip ${CHIP===k?"on":""}" onclick="setChip('${k}')">${l} (${c[k]})</button>`).join("");
+  const L2=TR.filter(k=>(CHIP==="all"||k.k===CHIP)&&truckMatch(k)).sort((a,b)=>({moving:0,idle:1,stopped:2}[a.k]-{moving:0,idle:1,stopped:2}[b.k])||a.name.localeCompare(b.name));
+  return L2.map(truckRow).join("")||'<div class="empty">No trucks match.</div>'}
+function taskRow(t){const n=T.indexOf(t)+1,s=stOf(t),pts=pointsOf(t,n);const e=window.SHIFT_ETA&&t.status==="in_progress"?SHIFT_ETA.forTask(t):null;
+  return `<div class="row ${SELT===t.id?"hl":""}" id="it${t.id}" onclick="selTask(${t.id},true)"><span class="num" style="--c:${COL[s]}">${n}</span><div class="mid"><div class="nm" style="font-size:14px">${esc(t.title||((t.pickup_name||"")+" → "+(t.delivery_name||"")))} <span class="st" style="color:${COL[s]}">${STL[s]}</span></div>
+   ${pts.map(p=>`<div class="ln"><b>${esc(p.label)}</b> ${esc(p.name||"")} <span style="color:var(--mut)">${esc(p.addr||"")}</span>${p.addr&&!ll(p.addr)?' <span class="nogeo">· not on map</span>':""}</div>`).join("")}
+   <div class="sb">${esc(who(t))}${t.scheduled_at?" · "+esc(clk(t.scheduled_at)):""}</div>${e?`<div class="eta">🕒 ${esc(e.text)}</div>`:""}${closest(t,n)}</div></div>`}
+function tasksTab(){$("chips").style.display="none";const q=qv();
+  const L2=T.filter(t=>(!$("oOpen").checked||t.status!=="completed")&&(!q||[t.title,t.pickup_name,t.delivery_name,t.pickup_address,t.delivery_address,who(t)].join(" ").toLowerCase().includes(q)));
+  return (L2.map(taskRow).join("")||'<div class="empty">No tasks for this day.</div>')+'<div class="foot">Same tasks as the board for this day. Pins: A = start / pickup, B = delivery, route stops numbered. Lines are straight, not driving routes. “Closest truck” = straight-line distance — a hint, not drive time.</div>'}
+function detail(k){const tk=truckTasks(k.id,k.drv),eta=etaFor(k);$("chips").style.display="none";
+  return `<div class="det"><button class="back" type="button" onclick="selTruck(null)">‹ All trucks</button><div style="display:flex;gap:10px;align-items:center">${icon(k.k,k.stale,k.deg,false,false)}<h2>${esc(k.name)}</h2>${k.oos?`<span class="oos">${esc(SVC[k.svc.status])}</span>`:""}</div>
+   <div class="grid"><div><div class="k">Driver</div><div class="v">${k.drv?esc(k.drv.name)+` <span style="color:var(--mut);font-size:12px">(${esc(truckSource(k.drv)==="pretrip"?"pre-trip":truckSource(k.drv)==="hand"?"set by hand":"scheduled")})</span>`:"None scheduled now"}</div></div>
+   <div><div class="k">Status</div><div class="v st ${k.k}">${esc(k.stale&&k.k!=="stopped"?"GPS stale":KL[k.k])} <span style="color:var(--mut);font-weight:500">${esc(sinceTxt(k.since))}</span></div></div>
+   <div><div class="k">Speed</div><div class="v">${k.x&&k.x.speed_mph!=null?Math.round(k.x.speed_mph)+" mph":"—"}${k.deg!=null&&k.k==="moving"?" · "+esc(k.x.heading):""}</div></div>
+   <div><div class="k">Stops today</div><div class="v">${k.stops}</div></div></div>
+   <div class="k">Location</div><div class="v">${esc(k.x?.address||"No GPS yet")}</div><div class="sb" style="color:var(--mut);font-size:12px">Last GPS report ${k.x?esc(clk(k.x.reported_at))+" ("+esc(ago(k.x.reported_at))+")":"—"}</div>
+   ${eta?`<div class="eta" style="margin-top:8px">🕒 ${esc(eta)}</div>`:""}
+   <div class="k">Today's tasks (${tk.length})</div>${tk.map(t=>`<div class="tk"><b>#${T.indexOf(t)+1}</b> ${esc((t.pickup_name||"")+" → "+(t.delivery_name||""))} · <span style="color:${COL[stOf(t)]};font-weight:700">${STL[stOf(t)]}</span></div>`).join("")||'<div class="sb" style="color:var(--mut)">None</div>'}
+   <a class="btn" href="trucks.html">Open Trucks page ›</a></div>`}
+function drawList(){const k=SEL!=null?TR.find(x=>x.id===SEL):null;$("body").innerHTML=k&&TAB==="trucks"?detail(k):TAB==="trucks"?trucksTab():tasksTab()}
+function drawAll(){drawPins();drawTrucks();drawList();
+  if(!fitted){const all=[...TR.filter(k=>k.x&&k.x.lat!=null).map(k=>[k.x.lat,k.x.lon]),...Object.values(TC).flat().map(c=>[c.lat,c.lon])];if(all.length){fitAll(all);fitted=true}}}
+function pad(){const desk=matchMedia("(min-width:900px)").matches;return desk?{paddingTopLeft:[430,80],paddingBottomRight:[40,40]}:{paddingTopLeft:[30,70],paddingBottomRight:[30,(parseInt(getComputedStyle(document.documentElement).getPropertyValue("--h"))||170)+20]}}
+function fitAll(all){all=all||TR.filter(k=>k.x&&k.x.lat!=null).map(k=>[k.x.lat,k.x.lon]);if(all.length)map.fitBounds(all,{...pad(),maxZoom:13})}
+/* ---------- interaction ---------- */
+window.setChip=k=>{CHIP=k;drawList()};
+window.selTruck=function(id,zoom){SEL=id;SELT=null;TAB="trucks";tabUI();drawTrucks();drawPins();drawList();const k=TR.find(x=>x.id===id);
+  if(k&&zoom&&k.x&&k.x.lat!=null){map.flyTo([k.x.lat,k.x.lon],15,{duration:.6});setTimeout(()=>{TM[id]&&TM[id].openTooltip()},700);if(!matchMedia("(min-width:900px)").matches&&sheetH()<window.innerHeight*.45)setSheet("half")}};
+window.selTask=function(id,fromList){SELT=id;SEL=null;TAB="tasks";tabUI();drawPins();drawTrucks();drawList();const cs=TC[id]||[];
+  if(fromList&&cs.length){map.fitBounds(L.latLngBounds(cs.map(c=>[c.lat,c.lon])).pad(.25),{...pad(),maxZoom:13});PINS[id]&&PINS[id][0]&&PINS[id][0].openPopup()}
   if(!fromList){const e=$("it"+id);e&&e.scrollIntoView({behavior:"smooth",block:"nearest"})}};
+function tabUI(){$("tbT").classList.toggle("on",TAB==="trucks");$("tbK").classList.toggle("on",TAB==="tasks")}
+$("tbT").onclick=()=>{TAB="trucks";SELT=null;tabUI();drawPins();drawList()};$("tbK").onclick=()=>{TAB="tasks";SEL=null;tabUI();drawTrucks();drawList()};
+$("q").oninput=()=>{$("sx").style.display=$("q").value?"block":"none";drawTrucks();drawList()};$("sx").onclick=()=>{$("q").value="";$("q").oninput()};
+$("q").onkeydown=e=>{if(e.key==="Enter"){const m=TR.filter(truckMatch);if(m.length===1)selTruck(m[0].id,true);$("q").blur()}};
+const pops={filt:"popF",lay:"popL"};for(const [b,p] of Object.entries(pops))$(b).onclick=e=>{e.stopPropagation();const o=$(p).classList.contains("show");document.querySelectorAll(".pop").forEach(x=>x.classList.remove("show"));document.querySelectorAll("#filt,#lay").forEach(x=>x.classList.remove("on"));if(!o){$(p).classList.add("show");$(b).classList.add("on")}};
+document.addEventListener("click",e=>{if(!e.target.closest(".pop")&&!e.target.closest("#filt,#lay")){document.querySelectorAll(".pop").forEach(x=>x.classList.remove("show"));document.querySelectorAll("#filt,#lay").forEach(x=>x.classList.remove("on"))}});
+$("oTr").onchange=drawTrucks;$("oTa").onchange=drawPins;$("oOpen").onchange=()=>{drawPins();drawList()};
+document.querySelectorAll("input[name=bm]").forEach(r=>r.onchange=()=>setBase(r.value));
+$("recenter").onclick=()=>{SEL=null;drawTrucks();drawList();fitAll()};
+map.on("zoomend",drawTrucks);map.on("click",()=>{document.querySelectorAll(".pop").forEach(x=>x.classList.remove("show"))});
+/* ---------- bottom sheet (phone) ---------- */
+const SNAP={peek:178,half:()=>Math.round(innerHeight*.5),full:()=>innerHeight-74};
+const sheetH=()=>$("sheet").getBoundingClientRect().height;
+function setSheet(s){const h=typeof SNAP[s]==="function"?SNAP[s]():SNAP[s];document.documentElement.style.setProperty("--h",h+"px");$("sheet").style.height=h+"px"}
+(()=>{const g=$("grab"),sh=$("sheet");let y0=0,h0=0,drag=false,moved=false;
+  g.addEventListener("pointerdown",e=>{drag=true;moved=false;y0=e.clientY;h0=sheetH();sh.classList.add("drag");g.setPointerCapture(e.pointerId)});
+  g.addEventListener("pointermove",e=>{if(!drag)return;const h=Math.max(120,Math.min(innerHeight-60,h0+(y0-e.clientY)));if(Math.abs(e.clientY-y0)>4)moved=true;sh.style.height=h+"px"});
+  g.addEventListener("pointerup",e=>{if(!drag)return;drag=false;sh.classList.remove("drag");const h=sheetH();
+    if(!moved){setSheet(h<SNAP.half()-10?"half":h<SNAP.full()-10?"full":"peek");return}
+    const c=[["peek",SNAP.peek],["half",SNAP.half()],["full",SNAP.full()]].sort((a,b)=>Math.abs(a[1]-h)-Math.abs(b[1]-h))[0][0];setSheet(c)});
+})();
+if(!matchMedia("(min-width:900px)").matches)setSheet("peek");
+/* ---------- refresh ---------- */
 let busy=false;async function refresh(){if(busy||document.hidden)return;busy=true;try{await load()}catch(e){console.error(e);$("upd").textContent="⚠ "+e.message}finally{busy=false}}
-$("day").value=ymdCT(Date.now());$("day").onchange=()=>{fitted=false;refresh()};$("fs").onchange=draw;$("ftr").onchange=draw;
+$("day").value=ctDate(Date.now());$("day").onchange=()=>{fitted=false;refresh()};
 refresh();setInterval(refresh,20000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh()});
 </script></body></html>

@@ -275,3 +275,12 @@ v4.8.1 (2026-10-16) — Combine into route: one return to McCook
 - New stops store source_task_ids / source_parts (migration v481_route_stop_sources, additive). Trigger dispatch_task_stops_source_progress:
   when a stop is reached (arrived/done) its pickup parts set the original task In progress and its drop parts complete the original task.
   Routes made before v4.8.1 have no source_parts and are untouched. The route itself still completes when every stop is done.
+
+v4.8.2 (Oct 16 2026) — map.html restyled like Verizon Connect Reveal (read-only page; no data/schema changes):
+  full-screen light map (OpenStreetMap tiles, no key; styles Light / Standard / Humanitarian, attribution shown),
+  floating search "Search for vehicles and drivers", round Show/hide + Map style buttons, recenter button,
+  round truck icons (red square = stopped, orange pause = idling, green arrow = moving, rotated by GPS heading;
+  dimmed = GPS stale), name on hover/tap, overlapping trucks spread in a ring. Bottom sheet on phone (drag peek/half/full),
+  side panel on desktop: Trucks tab with All/Moving/Idling/Stopped chips + live counts, Tasks tab (same list + pins +
+  closest-truck hint). Tap a truck = zoom + detail card. Refresh every 20 s. Old page kept at /tmp/map.v481.html (box only).
+  Note: CARTO basemaps now need an API key (free tier, commercial use capped) so they are NOT used.
