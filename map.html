@@ -201,7 +201,9 @@ function fitAll(all){all=all||TR.filter(k=>k.x&&k.x.lat!=null).map(k=>[k.x.lat,k
 /* ---------- interaction ---------- */
 window.setChip=k=>{CHIP=k;drawList()};
 window.selTruck=function(id,zoom){SEL=id;SELT=null;TAB="trucks";tabUI();drawTrucks();drawPins();drawList();const k=TR.find(x=>x.id===id);
-  if(k&&zoom&&k.x&&k.x.lat!=null){map.flyTo([k.x.lat,k.x.lon],15,{duration:.6});setTimeout(()=>{TM[id]&&TM[id].openTooltip()},700);if(!matchMedia("(min-width:900px)").matches&&sheetH()<window.innerHeight*.45)setSheet("half")}};
+  if(k&&zoom&&k.x&&k.x.lat!=null){const desk=matchMedia("(min-width:900px)").matches;if(!desk&&sheetH()<innerHeight*.45)setSheet("half");
+    const z=15,dx=desk?-205:0,dy=desk?0:Math.round(((desk?0:SNAP.half())-60)/2),c=map.unproject(map.project([k.x.lat,k.x.lon],z).add([dx,dy]),z);
+    map.flyTo(c,z,{duration:.6});setTimeout(()=>{TM[id]&&TM[id].openTooltip()},700)}};
 window.selTask=function(id,fromList){SELT=id;SEL=null;TAB="tasks";tabUI();drawPins();drawTrucks();drawList();const cs=TC[id]||[];
   if(fromList&&cs.length){map.fitBounds(L.latLngBounds(cs.map(c=>[c.lat,c.lon])).pad(.25),{...pad(),maxZoom:13});PINS[id]&&PINS[id][0]&&PINS[id][0].openPopup()}
   if(!fromList){const e=$("it"+id);e&&e.scrollIntoView({behavior:"smooth",block:"nearest"})}};
