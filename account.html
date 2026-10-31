@@ -11,8 +11,10 @@ button{margin-top:14px;width:100%;padding:11px;border:0;border-radius:8px;backgr
 <label for="pw2">Confirm password</label><input id="pw2" type="password" autocomplete="new-password" minlength="8" required><button type="submit">Save password</button></form>
 <form id="signin" class="hide"><label for="em">Email</label><input id="em" type="email" autocomplete="username" required>
 <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password"><button type="submit">Sign in</button>
-<button type="button" class="sec" id="link">Email me a sign-in link</button></form>
-<button id="out" class="sec hide">Sign out</button><div id="msg"></div>
+<button type="button" class="sec" id="link">Email me a sign-in link</button>
+<label for="code">Or enter the 6-digit code from the email</label><input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="10">
+<button type="button" class="sec" id="usecode">Sign in with code</button></form>
+<button id="out" class="sec hide">Sign out (all devices)</button><div id="msg"></div>
 <p style="margin-top:16px"><a href="index.html">← Back to dashboard</a> · v4.9.3</p></div>
 <script>
 const db=supabase.createClient("https://hqhfstosclasgwgxubip.supabase.co","sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk");
@@ -35,6 +37,10 @@ $("signin").onsubmit=async e=>{e.preventDefault();const {error}=await db.auth.si
 $("link").onclick=async()=>{const em=$("em").value.trim();if(!em)return msg("Enter your email first.");
  const {error}=await db.auth.signInWithOtp({email:em,options:{shouldCreateUser:false,emailRedirectTo:location.origin+location.pathname}});
  if(error)return msg(error.message);msg("If that address has an account, a sign-in link is on its way.",true)};
-$("out").onclick=async()=>{await db.auth.signOut();msg("Signed out.",true);show()};
+$("usecode").onclick=async()=>{const em=$("em").value.trim(),tk=$("code").value.trim();if(!em||!tk)return msg("Enter your email and the code.");
+ let r=await db.auth.verifyOtp({email:em,token:tk,type:"email"});if(r.error)r=await db.auth.verifyOtp({email:em,token:tk,type:"recovery"});
+ $("code").value="";if(r.error)return msg(r.error.message);msg("Signed in. Now set your password.",true)};
+/* Sign out everywhere: also ends any other session on this account (e.g. one opened by an email link scanner). */
+$("out").onclick=async()=>{await db.auth.signOut({scope:"global"});msg("Signed out on all devices.",true);show()};
 show();
 </script></body></html>

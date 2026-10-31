@@ -314,6 +314,6 @@ v4.9.3 (Oct 31 2026) — Phase 1 of login/RLS (additive, nothing locked down yet
    driver_app_schedule, driver_app_set_status, driver_app_flag). Reads fall back to the old direct queries on any RPC
    error; writes fall back only if the RPC does not exist, so nothing is applied twice. Driver page label v3.4.0 -> v3.5.0; footer shows the version.
  - New account.html: set/change your dashboard password (invite link lands here), sign in, sign out, shows whether the
-   account is on the dispatch_staff allowlist. It does not gate the dashboard yet (that is the auth-login branch, not merged).
+   account is on the dispatch_staff allowlist; also accepts a 6-digit email code (link-scanner proof); sign-out is global. It does not gate the dashboard yet (that is the auth-login branch, not merged).
  - Database (migration shift_phase1_dispatch_staff_and_driver_rpcs): dispatch_staff allowlist table, is_dispatcher(),
    driver_app_* SECURITY DEFINER functions. No policies removed.
