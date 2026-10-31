@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SHIFT Dispatch</title><meta name="shift-version" content="v4.9.1"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<title>SHIFT Dispatch</title><meta name="shift-version" content="v4.9.2"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#080d14;--panel:#0e1621;--panel2:#111c29;--card:#131f2d;--ink:#f5f7fa;--muted:#8fa0b5;--line:#203246;--blue:#0a84ff;--cyan:#00c6ff;--green:#22c55e;--amber:#ffc107;--purple:#986cff;--red:#ef5350;--steel:#a5b0be;--shadow:0 14px 38px rgba(0,0,0,.25)}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#102c4d 0,#080d14 38%,#060a10 100%);color:var(--ink);font:14px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
@@ -1302,7 +1302,7 @@ function taskCard(t){
  <div class="route-footer"><div class="task-actions"><button class="mini" onclick="event.stopPropagation();editTask(${t.id})">Edit</button><button class="mini danger" onclick="event.stopPropagation();removeTask(${t.id})">Delete</button></div>${compactStatusControl(t)}</div>
  </article>`;
 }
-function updateMetrics(){let today=allTasks.filter(t=>!t.scheduled_at||ymd(t.scheduled_at)===ymd(new Date()));let completed=today.filter(t=>t.status==="completed").length;let active=today.filter(t=>t.assigned_driver_id&&t.status!=="completed").length;let assigned=new Set(today.filter(t=>t.assigned_driver_id&&t.status!=="completed").map(t=>String(t.assigned_driver_id))).size;$("mActive").textContent=active;$("mDrivers").textContent=assigned;$("mTasks").textContent=today.length;$("mRate").textContent=today.length?Math.round(completed/today.length*100)+"%":"0%"}
+function updateMetrics(){let today=allTasks.filter(t=>!t.combined_into_task_id&&(t.work_date||(!t.scheduled_at?ymd(new Date()):ymd(t.scheduled_at)))===boardDate);let completed=today.filter(t=>t.status==="completed").length;let active=today.filter(t=>t.assigned_driver_id&&t.status!=="completed").length;let assigned=new Set(today.filter(t=>t.assigned_driver_id&&t.status!=="completed").map(t=>String(t.assigned_driver_id))).size;$("mActive").textContent=active;$("mDrivers").textContent=assigned;$("mTasks").textContent=today.length;$("mRate").textContent=today.length?Math.round(completed/today.length*100)+"%":"0%"}
 function taskTypeBadge(t){
  let raw=(t.task_type||"").trim(); if(!raw)return "";
  let key=raw.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
@@ -1725,7 +1725,7 @@ async function quickAvailability(driverId,status){
  if(r.error)return alert(r.error.message);
  await load();
 }
-</script><script src="shift-features.js?v=4.9.1"></script><script src="pretrip-exceptions.js?v=4.9.1"></script><script src="timesheet-features.js?v=4.9.1"></script><script src="truck-features.js?v=4.9.1"></script><script src="gps-features.js?v=4.9.1"></script><script src="routes-features.js?v=4.9.1"></script><script src="live-features.js?v=4.9.1"></script><script src="unplanned-features.js?v=4.9.1"></script><script src="eta.js?v=4.9.1"></script><script src="trucks-board.js?v=4.9.1"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
+</script><script src="shift-features.js?v=4.9.2"></script><script src="pretrip-exceptions.js?v=4.9.2"></script><script src="timesheet-features.js?v=4.9.2"></script><script src="truck-features.js?v=4.9.2"></script><script src="gps-features.js?v=4.9.2"></script><script src="routes-features.js?v=4.9.2"></script><script src="live-features.js?v=4.9.2"></script><script src="unplanned-features.js?v=4.9.2"></script><script src="eta.js?v=4.9.2"></script><script src="trucks-board.js?v=4.9.2"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
  <div class="shift-cal" role="dialog" aria-modal="true" aria-label="Select date">
   <div class="shift-cal-head">
    <button type="button" onclick="changeCalMonth(-1)">‹</button>

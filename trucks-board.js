@@ -405,7 +405,7 @@ window.render=function(){
   try{updateMetrics()}catch(_){}
   bindDrag();
 };
-window.updateMetrics=function(){let today=allTasks.filter(t=>!t.scheduled_at||ymd(t.scheduled_at)===ymd(new Date()));let on=t=>t.assigned_driver_id||t.vehicle_id!=null||isMsg(t);let completed=today.filter(t=>t.status==="completed").length;let active=today.filter(t=>on(t)&&t.status!=="completed").length;let assigned=new Set(today.filter(t=>on(t)&&t.status!=="completed").map(t=>isMsg(t)?"m"+t.messenger_id:t.vehicle_id!=null?"v"+t.vehicle_id:"d"+t.assigned_driver_id)).size;$("mActive").textContent=active;$("mDrivers").textContent=assigned;$("mTasks").textContent=today.length;$("mRate").textContent=today.length?Math.round(completed/today.length*100)+"%":"0%"};
+window.updateMetrics=function(){let today=allTasks.filter(t=>!t.combined_into_task_id&&(t.work_date||(!t.scheduled_at?ymd(new Date()):ymd(t.scheduled_at)))===boardDate);let on=t=>t.assigned_driver_id||t.vehicle_id!=null||isMsg(t);let completed=today.filter(t=>t.status==="completed").length;let active=today.filter(t=>on(t)&&t.status!=="completed").length;let assigned=new Set(today.filter(t=>on(t)&&t.status!=="completed").map(t=>isMsg(t)?"m"+t.messenger_id:t.vehicle_id!=null?"v"+t.vehicle_id:"d"+t.assigned_driver_id)).size;$("mActive").textContent=active;$("mDrivers").textContent=assigned;$("mTasks").textContent=today.length;$("mRate").textContent=today.length?Math.round(completed/today.length*100)+"%":"0%"};
 
 /* ---------- drag & drop ---------- */
 window.bindDrag=function(){
@@ -867,7 +867,7 @@ const um40=window.updateMetrics;
 window.updateMetrics=function(){
   try{um40()}catch(_){}
   let e=$("statLine");if(!e)return;const g=id=>$(id)?.textContent||"0";
-  e.innerHTML=`<b>${g("mActive")}</b> active · <b>${g("mDrivers")}</b> drivers · <b>${g("mTasks")}</b> tasks today · <b>${g("mRate")}</b> done`;
+  e.innerHTML=`<b>${g("mActive")}</b> active · <b>${g("mDrivers")}</b> drivers · <b>${g("mTasks")}</b> tasks ${boardDate===ymd(new Date())?"today":"on "+new Date(boardDate+"T12:00:00").toLocaleDateString(undefined,{weekday:"short",month:"numeric",day:"numeric"})} · <b>${g("mRate")}</b> done`;
 };
 /* task cards: Edit/Delete/Messenger/driver picker into ⋯ */
 const tc43=window.taskCard;

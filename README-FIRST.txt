@@ -303,3 +303,8 @@ v4.9.1 (Oct 16 2026) — map-route v2: Mapbox driving-traffic (live traffic) whe
   MAPBOX_TOKEN is set, then OSRM, then straight line (fallback reason shown in the planner). Cache key includes the provider
   (old OSRM rows are never served once Mapbox is on); Mapbox results cached 15 min, OSRM 7 days; fallbacks not cached.
   Best-order matrix: driving-traffic up to 10 points, driving (typical traffic) above that. The token is NOT in this repo.
+
+v4.9.2 (Oct 31 2026) — header summary line ("N active · N drivers · N tasks · N% done") counts only the tasks of the
+  selected board date (same rule as the board: work_date, else scheduled_at date, else today), and stops merged into a
+  route count once (as the route, like the board shows them). Before, every task with no time was counted as "today" on every date. Label reads "tasks today" on today, "tasks on Fri 10/30" on other dates.
+  No data/schema change.
