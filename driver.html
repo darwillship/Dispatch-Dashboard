@@ -48,7 +48,7 @@ details.donebox{margin-top:8px}details.donebox summary{cursor:pointer;color:#69d
 .foot{color:#5f7286;text-align:center;font-size:11px;margin:20px 0}
 </style></head>
 <body>
-<header><div class="brand">SHIFT<small>Driver · v3.4.0</small></div><div class="who" id="who">…</div></header>
+<header><div class="brand">SHIFT<small>Driver · v3.5.0</small></div><div class="who" id="who">…</div></header>
 <main>
  <div id="alerts"></div>
  <div class="bar" id="dayBar" style="display:none"><button class="btn small" onclick="shiftDay(-1)">‹</button><div class="day" id="dayLabel"></div><button class="btn small" onclick="shiftDay(1)">›</button><button class="btn small" onclick="refresh(true)">↻</button></div>
@@ -80,20 +80,28 @@ function dirUrl(t){return "https://www.google.com/maps/dir/?api=1&origin="+encod
 let toastTimer=null;
 function toast(text,btnLabel,fn){$("toastText").textContent=text;let b=$("toastBtn");if(btnLabel){b.style.display="";b.textContent=btnLabel;b.onclick=()=>{hideToast();fn&&fn()}}else b.style.display="none";$("toast").classList.add("show");clearTimeout(toastTimer);toastTimer=setTimeout(hideToast,7000)}
 function hideToast(){$("toast").classList.remove("show")}
+/* v4.9.3: narrow SECURITY DEFINER RPCs first; fall back to the old direct table queries so nothing breaks
+   if an RPC is unavailable. Reads fall back on any error; writes only when the RPC itself is missing. */
+const DRIVER_VERSION="v3.5.0 (SHIFT v4.9.3)";
+function rpcMissing(e){return !!e&&(e.code==="PGRST202"||e.code==="42883"||/could not find the function/i.test(e.message||""))}
+async function rpcRead(name,args,direct){try{let r=await db.rpc(name,args);if(!r.error)return r;console.warn("RPC "+name+" failed; using direct query:",r.error.message)}catch(e){console.warn("RPC "+name+" threw; using direct query",e)}return await direct()}
+async function rpcWrite(name,args,direct){let r=await db.rpc(name,args);if(r.error&&rpcMissing(r.error)){console.warn("RPC "+name+" missing; using direct write");return {direct:true,...(await direct())}}return {direct:false,...r}}
+const directDrivers=()=>db.from("drivers").select("id,name,active").order("name");
 
 async function probeEvents(){if(eventsTable!==null)return eventsTable;let r=await db.from("dispatch_events").select("id").limit(1);eventsTable=!r.error;return eventsTable}
 async function logEvent(task,event,detail){try{if(!(await probeEvents()))return;await db.from("dispatch_events").insert({task_id:task.id,driver_id:driverId,event,detail:detail||null})}catch(_){}}
 
 async function showPicker(){
  $("who").innerHTML="Select driver";$("dayBar").style.display="none";
- let r=await db.from("drivers").select("id,name,active").order("name");
+ let r=await rpcRead("driver_app_drivers",{},directDrivers);
  if(r.error){$("content").innerHTML=`<div class="empty">Could not load drivers: ${esc(r.error.message)}</div>`;return}
  $("content").innerHTML=`<div class="notice">Tap your name once. This phone will remember you.</div><div class="picker">`+(r.data||[]).filter(d=>d.active!==false).map(d=>`<button class="btn" onclick="pickDriver(${d.id})">${esc(d.name)}</button>`).join("")+`</div>`;
 }
 function pickDriver(id){driverId=id;localStorage.setItem("shift-driver-id",id);let u=new URL(location.href);u.searchParams.set("d",id);history.replaceState(null,"",u);refresh(true)}
 
 async function scheduleText(){
- let [o,w]=await Promise.all([db.from("driver_schedule").select("*").eq("driver_id",driverId).eq("work_date",day),db.from("driver_weekly_schedule").select("*").eq("driver_id",driverId)]);
+ let sr=await rpcRead("driver_app_schedule",{p_driver_id:driverId,p_day:day},async()=>{let [a,b]=await Promise.all([db.from("driver_schedule").select("*").eq("driver_id",driverId).eq("work_date",day),db.from("driver_weekly_schedule").select("*").eq("driver_id",driverId)]);return {data:{daily:a.data||[],weekly:b.data||[]},error:a.error||b.error}});
+ let o={data:(sr.data&&sr.data.daily)||[]},w={data:(sr.data&&sr.data.weekly)||[]};
  let ov=(o.data||[])[0];if(ov){return ov.status==="working"||ov.status==="messenger"?`${ov.status==="messenger"?"Messenger":"Start"} ${fmtT(ov.start_time)}${ov.end_time?" – "+fmtT(ov.end_time):""}`:({off:"Off",pto:"PTO",call_off:"Call off"})[ov.status]||ov.status}
  let dow=new Date(day+"T12:00:00").getDay(),wk=(w.data||[]).find(x=>Number(x.day_of_week)===dow);
  return wk&&wk.working?`Start ${fmtT(wk.start_time)}${wk.end_time?" – "+fmtT(wk.end_time):""}`:"Not scheduled";
@@ -102,9 +110,9 @@ async function scheduleText(){
 async function refresh(force){
  if(!driverId){showPicker();return}
  let [dr,tr,ar]=await Promise.all([
-  db.from("drivers").select("id,name").eq("id",driverId).maybeSingle(),
-  db.from("dispatch_tasks").select("*").eq("assigned_driver_id",driverId).order("sort_order"),
-  db.from("shift_reminders").select("id,note,completed").eq("completed",false).like("note","%[SHIFT-DRIVER task:%")
+  rpcRead("driver_app_drivers",{},directDrivers).then(r=>r.error?r:{data:(r.data||[]).find(d=>Number(d.id)===Number(driverId))||null,error:null}),
+  rpcRead("driver_app_tasks",{p_driver_id:driverId},()=>db.from("dispatch_tasks").select("*").eq("assigned_driver_id",driverId).order("sort_order")),
+  rpcRead("driver_app_alerts",{p_driver_id:driverId},()=>db.from("shift_reminders").select("id,note,completed").eq("completed",false).like("note","%[SHIFT-DRIVER task:%"))
  ]);
  if(dr.error||tr.error){$("content").innerHTML=`<div class="empty">Connection problem. Pull to refresh.<br><small>${esc((dr.error||tr.error).message)}</small></div>`;return}
  if(!dr.data){localStorage.removeItem("shift-driver-id");driverId=null;showPicker();return}
@@ -120,7 +128,7 @@ async function refresh(force){
  if(!firstLoad){let newly=fresh.filter(t=>!prev.has(t.id));if(newly.length)notifyNew(newly)}
  firstLoad=false;
  render(s);
- $("foot").textContent="Updated "+new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit",second:"2-digit"})+" · auto-refreshes every 20s";
+ $("foot").textContent="Updated "+new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit",second:"2-digit"})+" · auto-refreshes every 20s · "+DRIVER_VERSION;
 }
 function flagFor(t){return alertsOpen.find(a=>new RegExp("\\[SHIFT-DRIVER task:"+t.id+" (missed|refused)\\]").test(a.note||""))}
 function stopCard(t,i,s){
@@ -178,9 +186,10 @@ function notifyNew(list){
 }
 async function updateTask(id,patch){
  // single-row update, guarded so a driver can only touch their own assigned stop
- let r=await db.from("dispatch_tasks").update(patch).eq("id",id).eq("assigned_driver_id",driverId).select("id");
+ let r=await rpcWrite("driver_app_set_status",{p_task_id:id,p_driver_id:driverId,p_status:patch.status,p_completed_at:patch.completed_at||null},
+  ()=>db.from("dispatch_tasks").update(patch).eq("id",id).eq("assigned_driver_id",driverId).select("id"));
  if(r.error){alert("Could not save. Check signal and try again.\n"+r.error.message);return false}
- if(!r.data||!r.data.length){alert("This stop is no longer assigned to you. Refreshing.");await refresh(true);return false}
+ if(r.direct?(!r.data||!r.data.length):r.data!==true){alert("This stop is no longer assigned to you. Refreshing.");await refresh(true);return false}
  return true;
 }
 async function startStop(id){let t=stops.find(x=>x.id===id);if(!t)return;if(await updateTask(id,{status:"in_progress",completed_at:null})){logEvent(t,"started");await refresh(true)}}
@@ -198,7 +207,8 @@ async function flagStop(id,kind){
  let reason=prompt(`${kind==="missed"?"MISSED":"REFUSED"} — ${t.pickup_name} → ${t.delivery_name}\nWhat happened? (optional)`,"");
  if(reason===null)return;
  let note=`🚨 [SHIFT-DRIVER task:${t.id} ${kind}] ${driver.name} reported ${kind.toUpperCase()}: ${t.pickup_name} → ${t.delivery_name}${t.scheduled_at?" ("+hm(t.scheduled_at)+")":""}${reason.trim()?" — "+reason.trim():""}`;
- let r=await db.from("shift_reminders").insert({note:note.slice(0,480),priority:"high",due_at:new Date().toISOString(),completed:false});
+ let r=await rpcWrite("driver_app_flag",{p_task_id:t.id,p_driver_id:driverId,p_kind:kind,p_reason:reason.trim()||null},
+  ()=>db.from("shift_reminders").insert({note:note.slice(0,480),priority:"high",due_at:new Date().toISOString(),completed:false}));
  if(r.error){alert("Could not notify dispatch. Please call the shipping manager.\n"+r.error.message);return}
  logEvent(t,kind,{reason:reason.trim()||null});
  toast("Dispatch was notified");await refresh(true);

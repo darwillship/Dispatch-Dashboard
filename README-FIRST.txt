@@ -308,3 +308,12 @@ v4.9.2 (Oct 31 2026) — header summary line ("N active · N drivers · N tasks 
   selected board date (same rule as the board: work_date, else scheduled_at date, else today), and stops merged into a
   route count once (as the route, like the board shows them). Before, every task with no time was counted as "today" on every date. Label reads "tasks today" on today, "tasks on Fri 10/30" on other dates.
   No data/schema change.
+
+v4.9.3 (Oct 31 2026) — Phase 1 of login/RLS (additive, nothing locked down yet).
+ - driver.html now reads/writes through narrow Supabase RPCs (driver_app_drivers, driver_app_tasks, driver_app_alerts,
+   driver_app_schedule, driver_app_set_status, driver_app_flag). Reads fall back to the old direct queries on any RPC
+   error; writes fall back only if the RPC does not exist, so nothing is applied twice. Driver page label v3.4.0 -> v3.5.0; footer shows the version.
+ - New account.html: set/change your dashboard password (invite link lands here), sign in, sign out, shows whether the
+   account is on the dispatch_staff allowlist. It does not gate the dashboard yet (that is the auth-login branch, not merged).
+ - Database (migration shift_phase1_dispatch_staff_and_driver_rpcs): dispatch_staff allowlist table, is_dispatcher(),
+   driver_app_* SECURITY DEFINER functions. No policies removed.

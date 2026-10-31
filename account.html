@@ -1,0 +1,40 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="shift-version" content="v4.9.3"><title>SHIFT Dispatch · Account</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}
+.card{background:#1e293b;border-radius:14px;padding:24px;width:min(380px,92vw);box-shadow:0 10px 30px #0006}h1{font-size:20px;margin:0 0 4px}p{color:#94a3b8;font-size:14px}
+label{display:block;font-size:13px;margin:12px 0 4px;color:#cbd5e1}input{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-size:15px}
+button{margin-top:14px;width:100%;padding:11px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;font-weight:600;cursor:pointer}button.sec{background:#334155}
+#msg{margin-top:12px;font-size:14px;min-height:18px}.ok{color:#4ade80}.err{color:#f87171}.hide{display:none}a{color:#93c5fd}</style></head><body>
+<div class="card"><h1>SHIFT Dispatch · Account</h1><p id="who">Checking session…</p>
+<form id="setpw" class="hide"><label for="pw1">New password (min 8 characters)</label><input id="pw1" type="password" autocomplete="new-password" minlength="8" required>
+<label for="pw2">Confirm password</label><input id="pw2" type="password" autocomplete="new-password" minlength="8" required><button type="submit">Save password</button></form>
+<form id="signin" class="hide"><label for="em">Email</label><input id="em" type="email" autocomplete="username" required>
+<label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password"><button type="submit">Sign in</button>
+<button type="button" class="sec" id="link">Email me a sign-in link</button></form>
+<button id="out" class="sec hide">Sign out</button><div id="msg"></div>
+<p style="margin-top:16px"><a href="index.html">← Back to dashboard</a> · v4.9.3</p></div>
+<script>
+const db=supabase.createClient("https://hqhfstosclasgwgxubip.supabase.co","sb_publishable_01rvOlUuiba6260MPA1g4A_5oFgpGCk");
+const $=id=>document.getElementById(id);
+function msg(t,ok){$("msg").textContent=t;$("msg").className=ok?"ok":"err"}
+async function show(){
+ const {data:{session}}=await db.auth.getSession();
+ if(!session){$("who").textContent="Not signed in.";$("signin").classList.remove("hide");$("setpw").classList.add("hide");$("out").classList.add("hide");return}
+ let disp="unknown";try{const r=await db.rpc("is_dispatcher");if(!r.error)disp=r.data?"yes":"no"}catch(e){}
+ $("who").textContent="Signed in as "+session.user.email+" · dispatcher access: "+disp+". You can set or change your password below.";
+ $("signin").classList.add("hide");$("setpw").classList.remove("hide");$("out").classList.remove("hide");
+}
+const h=location.hash;if(/error_description=/.test(h)){const p=new URLSearchParams(h.slice(1));msg(p.get("error_description")||"Link error",false)}
+db.auth.onAuthStateChange(()=>setTimeout(show,0));
+$("setpw").onsubmit=async e=>{e.preventDefault();const a=$("pw1").value,b=$("pw2").value;
+ if(a.length<8)return msg("Password must be at least 8 characters.");if(a!==b)return msg("Passwords do not match.");
+ const {error}=await db.auth.updateUser({password:a});$("pw1").value=$("pw2").value="";
+ if(error)return msg(error.message);msg("Password saved. You can now sign in with your email and this password.",true);history.replaceState(null,"",location.pathname)};
+$("signin").onsubmit=async e=>{e.preventDefault();const {error}=await db.auth.signInWithPassword({email:$("em").value.trim(),password:$("pw").value});$("pw").value="";if(error)return msg(error.message);msg("Signed in.",true)};
+$("link").onclick=async()=>{const em=$("em").value.trim();if(!em)return msg("Enter your email first.");
+ const {error}=await db.auth.signInWithOtp({email:em,options:{shouldCreateUser:false,emailRedirectTo:location.origin+location.pathname}});
+ if(error)return msg(error.message);msg("If that address has an account, a sign-in link is on its way.",true)};
+$("out").onclick=async()=>{await db.auth.signOut();msg("Signed out.",true);show()};
+show();
+</script></body></html>
