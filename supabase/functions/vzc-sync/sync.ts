@@ -18,6 +18,9 @@ const WRITE_MAX_AGE_DAYS = 1;          // writes only for today + yesterday (CT)
 const AUTO_STATUS_PROTECTED = [52, 58, 61, 78, 98, 107, 117, 140, 161, 162];
 const LIVE_STATE: Record<string, string> = { Moving: "Moving", Idle: "Idle", Stop: "Engine off" };
 const TASK_COLS = "id,created_at,assigned_at,vehicle_id,messenger_id,title,status,task_type,work_date,scheduled_at,completed_at,assigned_driver_id,pickup_name,pickup_address,delivery_name,delivery_address,is_route,combined_into_task_id,gps_departed_at,gps_arrived_at,gps_left_destination_at,gps_vehicle_id,gps_source,gps_origin_engine_on_at,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_returned_base_at,gps_match_method,gps_match_distance_m";
+// v4.10.0 (migration SUPABASE-AUTO-TRIPS.sql): trip cutoff + pickup arrival. Read with a fallback so the function keeps
+// working (old behavior, no new writes) until the migration is applied.
+const TASK_COLS_V410 = TASK_COLS + ",gps_since,gps_origin_arrived_at";
 const STOP_COLS = "id,task_id,seq,location_name,location_address,status,gps_arrived_at,gps_departed_at,gps_vehicle_id,gps_source,gps_engine_off_at,gps_engine_on_at,gps_idle_minutes,gps_engine_off_minutes,gps_match_method,gps_match_distance_m";
 
 export interface SyncOptions { liveOnly?: boolean; dryRun: boolean; dates?: string[]; vehicles?: string[]; source?: string; recompute?: boolean; assignSim?: { ignoreTrucksOf: number[]; allDay: boolean } }
@@ -266,13 +269,19 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
   // 6) per date
   const trackCache = new Map<string, M.VehicleTrack>();
   let autoStatusMissing = false;   // set once vzc_auto_status is found missing (pre-migration) → report-only
+  let v410 = true;                 // false = migration SUPABASE-AUTO-TRIPS.sql not applied yet → no split / self-correction writes
   for (const date of dates) {
     const dsum: any = { date, writes_allowed: !opt.dryRun && date >= writableFrom, open_tasks: 0, matched: [], unmatched: [], skipped: [], writes: 0, write_errors: [] };
     summary.dates.push(dsum);
     const winStart = M.ctMidnightUtc(date), winEnd = Math.min(Date.now(), M.ctMidnightUtc(addDays(date, 1)) + 12 * 3600e3);
     if (winEnd <= winStart) continue;
 
-    const { data: trows, error: terr } = await db.from("dispatch_tasks").select(TASK_COLS).eq("work_date", date).order("id");
+    const readTasks = async (cols: string): Promise<{ data: any[] | null; error: any }> => await db.from("dispatch_tasks").select(cols).eq("work_date", date).order("id") as any;
+    let { data: trows, error: terr } = await readTasks(v410 ? TASK_COLS_V410 : TASK_COLS);
+    if (terr && v410 && /gps_since|gps_origin_arrived_at|column/i.test(terr.message)) {
+      v410 = false; summary.auto_trips_note = "migration SUPABASE-AUTO-TRIPS.sql not applied — trip split / self-correction are off";
+      ({ data: trows, error: terr } = await readTasks(TASK_COLS));
+    }
     if (terr) throw new Error("read tasks: " + terr.message);
     // v4.0.0: planned truck = the task's stored vehicle_id, else the driver's scheduled truck (truck_schedules / Daily Overrides)
     const dayShifts = await shiftsAround(date);
@@ -286,6 +295,13 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
     if (serr) throw new Error("read route stops: " + serr.message);
 
     const targets: M.TaskTarget[] = [];
+    // v4.10.0: a route made by combining tasks counts GPS from the EARLIEST assignment of its originals (not from when the
+    // route row was created) — routes saved before v4.10.0 have no gps_since, so derive it here.
+    const memberGate = (routeId: number): number | null => {
+      const gs = ((trows || []) as any[]).filter((o) => o.combined_into_task_id === routeId)
+        .map((o) => M.gpsGate(o.created_at ? Date.parse(o.created_at) : null, o.assigned_at ? Date.parse(o.assigned_at) : null)).filter((x): x is number => x != null);
+      return gs.length ? Math.min(...gs) : null;
+    };
     if (opt.recompute && opt.dryRun) {   // compare mode: pretend nothing is stored yet (never used for writes)
       for (const t of (trows || []) as any[]) for (const c of Object.keys(t)) if (c.startsWith("gps_")) t[c] = null;
       for (const s of (srows || []) as any[]) { for (const c of Object.keys(s)) if (c.startsWith("gps_")) s[c] = null; s.status = "pending"; }
@@ -327,6 +343,8 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
         origin, dest, stops, existing: t, completedAt: t.completed_at ? Date.parse(t.completed_at) : null, scheduledAt: t.scheduled_at ? Date.parse(t.scheduled_at) : null,
         createdAt: t.created_at ? Date.parse(t.created_at) : null, assignedAt: t.assigned_at ? Date.parse(t.assigned_at) : null,
         vehicleLocked: t.vehicle_id != null,
+        gpsSince: t.gps_since ? Date.parse(t.gps_since) : t.is_route ? memberGate(t.id) : null,
+        memberIds: t.is_route ? (trows || []).filter((o: any) => o.combined_into_task_id === t.id).map((o: any) => Number(o.id)) : [],
         shiftWindows: t.assigned_driver_id ? dayShifts.filter((s) => s.driverId === Number(t.assigned_driver_id) && s.date === date && A.clear(s)).map((s) => [s.start!, s.end!] as [number, number]) : null,
       });
     }
@@ -397,10 +415,26 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
           if (error) dsum.write_errors.push(`${p.table} #${p.id}: ${error.message}`); else dsum.writes += count || 0;
         }
         if (p.status && p.table === "dispatch_task_stops") {   // forward-only stop status (v3.8.0 rules)
-          const { error } = await db.from("dispatch_task_stops").update({ status: p.status.to }).eq("id", p.id).in("status", p.status.from);
+          const set: any = { status: p.status.to };
+          if (v410) Object.assign(set, { status_source: "auto_gps", status_auto_at: new Date().toISOString() });
+          const { error } = await db.from("dispatch_task_stops").update(set).eq("id", p.id).in("status", p.status.from);
           if (error) dsum.write_errors.push(`stop #${p.id} status: ${error.message}`);
+          else { const r = ((srows || []) as any[]).find((x) => x.id === p.id); if (r && p.status.from.includes(r.status)) r.status = p.status.to; }
         }
       }
+    }
+    // v4.10.0: truck came back to McCook between stops → close this trip there and start a new one for the rest
+    for (const m of res.matches) {
+      if (!m.split) continue;
+      const row: any = { task_id: m.taskId, back_at_mccook: M.ctClock(m.split.baseArrived), left_mccook: M.ctClock(m.split.baseDeparted), keeps: m.split.keepStopIds, moves: m.split.moveStopIds, action: "would split (dry run)" };
+      (dsum.splits ??= []).push(row);
+      if (opt.dryRun || !dsum.writes_allowed) { if (!opt.dryRun) row.action = "not written (date not writable)"; continue; }
+      if (!v410 || date !== today || AUTO_STATUS_PROTECTED.includes(m.taskId)) { row.action = !v410 ? "report only (migration not applied)" : "skipped"; continue; }
+      const { data, error } = await db.rpc("vzc_split_trip", {
+        p_task_id: m.taskId, p_move_stop_ids: m.split.moveStopIds, p_base_arrived: new Date(m.split.baseArrived).toISOString(),
+        p_base_departed: m.split.baseDeparted != null ? new Date(m.split.baseDeparted).toISOString() : null, p_vehicle_id: m.vehicleId,
+      });
+      if (error) { row.action = "error"; dsum.write_errors.push(`split #${m.taskId}: ${error.message}`); } else row.action = String(data);
     }
     await autoStatus(date, dsum, (trows || []) as any[], (srows || []) as any[], res.matches);
     if (up) {
@@ -418,10 +452,39 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
     const byTask = new Map(matches.map((m) => [m.taskId, m]));
     const out: any[] = [];
     // status_source exists only after migration v312 — read it separately so a missing column never breaks the run
-    const srcOf = new Map<number, string | null>();
-    { const { data, error } = await db.from("dispatch_tasks").select("id,status_source").eq("work_date", date); if (!error) for (const r of (data || []) as any[]) srcOf.set(r.id, r.status_source); }
+    const srcOf = new Map<number, any>();
+    {
+      const rd = async (cols: string): Promise<{ data: any[] | null; error: any }> => await db.from("dispatch_tasks").select(cols).eq("work_date", date) as any;
+      let { data, error } = await rd(v410 ? "id,status_source,status_flag" : "id,status_source");
+      if (error && v410) ({ data, error } = await rd("id,status_source"));
+      if (!error) for (const r of (data || []) as any[]) srcOf.set(r.id, r);
+    }
+    const withSrc = (t0: any) => ({ ...t0, status_source: srcOf.get(t0.id)?.status_source ?? null, status_flag: srcOf.get(t0.id)?.status_flag ?? null });
+    // v4.10.0 self-correction from stored times: GPS-proven stops back to 'done', "Complete by hand, no GPS visit" flags
+    if (v410) {
+      const byT = new Map<number, any[]>();
+      for (const s of srows) (byT.get(Number(s.task_id)) ?? byT.set(Number(s.task_id), []).get(Number(s.task_id))!).push(s);
+      const fx = M.selfCorrections(trows.filter((t) => !AUTO_STATUS_PROTECTED.includes(t.id)).map(withSrc), byT);
+      const fixes: any[] = [];
+      for (const f of fx.stopDone) {
+        const row: any = { stop_id: f.id, task_id: f.taskId, to: "done", why: "GPS shows the truck left this stop", action: "would update (dry run)" };
+        fixes.push(row);
+        if (opt.dryRun || !dsum.writes_allowed) continue;
+        const { error } = await db.from("dispatch_task_stops").update({ status: "done", status_source: "auto_gps", status_auto_at: new Date().toISOString() }).eq("id", f.id).neq("status", "done");
+        if (error) { row.action = "error"; dsum.write_errors.push(`stop #${f.id} self-correct: ${error.message}`); }
+        else { row.action = "updated"; const r = srows.find((x) => x.id === f.id); if (r) r.status = "done"; }
+      }
+      for (const f of fx.flags) {
+        const row: any = { task_id: f.id, flag: f.flag ?? "(cleared)", action: "would update (dry run)" };
+        fixes.push(row);
+        if (opt.dryRun || !dsum.writes_allowed) continue;
+        const { error } = await db.from("dispatch_tasks").update({ status_flag: f.flag }).eq("id", f.id);
+        if (error) { row.action = "error"; dsum.write_errors.push(`flag #${f.id}: ${error.message}`); } else row.action = "updated";
+      }
+      if (fixes.length) dsum.self_corrections = fixes;
+    }
     for (const t0 of trows) {
-      const t = { ...t0, status_source: srcOf.get(t0.id) ?? null };
+      const t = withSrc(t0);
       if (AUTO_STATUS_PROTECTED.includes(t.id) || t.combined_into_task_id || t.messenger_id != null || (!t.assigned_driver_id && t.vehicle_id == null)) continue;
       if (t.assigned_driver_id && env.excludeDrivers.includes(Number(t.assigned_driver_id))) continue;
       const dec = M.autoStatusFor(t, srows.filter((x) => x.task_id === t.id), byTask.get(t.id));
@@ -431,7 +494,10 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
       out.push(row);
       if (opt.dryRun || !dsum.writes_allowed) { if (!opt.dryRun) row.action = "not written (date not writable)"; continue; }
       if (autoStatusMissing) { row.action = "report only (vzc_auto_status not installed yet)"; continue; }
-      const { data, error } = await db.rpc("vzc_auto_status", { p_task_id: t.id, p_to: to, p_completed_at: to === "completed" ? new Date(at!).toISOString() : null });
+      const args: any = { p_task_id: t.id, p_to: to, p_completed_at: to === "completed" ? new Date(at!).toISOString() : null };
+      if (v410) args.p_force = !!dec.force;   // GPS proof may override a status set by hand (forward-only, never reopens)
+      if (dec.force && t.status_source === "manual") row.note = "GPS proof overrides a status set by hand";
+      const { data, error } = await db.rpc("vzc_auto_status", args);
       if (error) {
         if (/vzc_auto_status|PGRST202|does not exist|schema cache/i.test(error.message + " " + (error as any).code)) { autoStatusMissing = true; row.action = "report only (vzc_auto_status not installed yet)"; summary.auto_status_note = "migration v312_auto_status not applied — auto status is report-only"; }
         else { row.action = "error"; dsum.write_errors.push(`auto status #${t.id}: ${error.message}`); }

@@ -317,3 +317,27 @@ v4.9.3 (Oct 31 2026) — Phase 1 of login/RLS (additive, nothing locked down yet
    account is on the dispatch_staff allowlist; also accepts a 6-digit email code (link-scanner proof); sign-out is global. It does not gate the dashboard yet (that is the auth-login branch, not merged).
  - Database (migration shift_phase1_dispatch_staff_and_driver_rpcs): dispatch_staff allowlist table, is_dispatcher(),
    driver_app_* SECURITY DEFINER functions. No policies removed.
+
+v4.10.0 (Nov 4 2026) — Auto trips + GPS self-correction (vzc-sync v20). Needs SUPABASE-AUTO-TRIPS.sql first.
+ - Auto-combine (new auto-trips.js, today's board only, "⛓ Auto trips: on/off" button, per browser): a driver's open
+   tasks (assigned/in progress) on the same truck become one route automatically, like ⛓ Combine. The route inherits the
+   truck, the GPS cutoff (earliest assignment of its tasks) and any pickup/drop visits GPS already saw; stops go in the
+   order GPS saw them, the rest in plan order (time, then assignment). Toast has ↩ Undo (only before GPS sees the route);
+   ↩ Restore on a task also keeps it out of auto-combine (no_auto_combine). Messenger, completed and pending tasks are skipped;
+   a plan with a drop before its pickup is left for the dispatcher. Manual ⛓ Combine now saves through the same RPC
+   (shift_combine_tasks: one transaction, same inheritance) and falls back to the old inserts before the migration.
+ - McCook return split (vzc-sync v20): when the truck comes back to McCook between stops, the trip closes at the McCook
+   arrival and the stops still to do move to a new trip that starts at McCook (GPS cutoff = McCook departure).
+ - Single tasks save the pickup visit (gps_origin_arrived_at / gps_departed_at) as soon as GPS sees it.
+ - Every sync self-corrects: stops GPS proved are set back to done (even after a manual set-back), a trip completes when
+   all its stops are done, GPS completion overrides a hand-set status, a hand Complete is never reversed — it is flagged
+   "⚠ Complete by hand, no GPS visit" when GPS never saw the drop.
+ - Board: status badge "GPS" or "set by hand" on every assigned card; stop chips show GPS/hand.
+ - Fix for Route #308 (11/04/2026): a route combined after the truck already left had a GPS cutoff = route creation, so the
+   earlier Universal Laminating pickup could never match. The cutoff now comes from the original tasks.
+ - Database (SUPABASE-AUTO-TRIPS.sql, idempotent, additive): new columns dispatch_tasks.gps_since, gps_origin_arrived_at,
+   split_from_task_id, status_flag, combine_source, no_auto_combine; dispatch_task_stops.status_source, status_auto_at;
+   functions shift_combine_tasks, shift_undo_auto_combine, vzc_split_trip (service_role only), vzc_auto_status(+p_force);
+   stop status trigger records hand vs GPS; dispatch_route_stops_v adds stop_status_source, stop_status_auto_at, source_parts.
+ - Tests: supabase/tests/auto-trips (Postgres, 24 checks) and supabase/functions/vzc-sync/tests (deno, incl. the Big Blue
+   11/04/2026 replay). vzc-sync v20 also runs before the migration (new writes switched off, noted in the run summary).

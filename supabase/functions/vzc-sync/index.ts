@@ -1,4 +1,6 @@
 // vzc-sync — Verizon Connect Reveal → SHIFT Dispatch Dashboard GPS updater (Supabase Edge Function, verify_jwt = false).
+// v20 (SHIFT v4.10.0): trip GPS cutoff from the combined originals, McCook-return split (vzc_split_trip), single-task pickup
+//   visits, self-correction (stops/trips GPS proved, forced GPS completion, "complete by hand, no GPS visit" flag). See README-FIRST.txt.
 //
 // POST body (all optional): { "dry_run": true|false, "dates": ["YYYY-MM-DD"], "vehicles": ["Big Blue"], "recompute": true,
 //   "assign_sim": { "ignore_trucks_of": [driver ids], "all_day": true } }   <- dry runs only: replay automatic truck assignment

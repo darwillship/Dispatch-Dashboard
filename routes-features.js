@@ -73,6 +73,7 @@ let STOPS={};                       // task_id -> ordered stop rows from dispatc
 let showCombined=sessionStorage.getItem("shift-show-combined")==="1";
 let combineMode=false,picked=[];
 window.SHIFT_routeStops=id=>STOPS[id]||[];
+window.SHIFT_stopsOf=id=>STOPS[id]||[];
 const isRoute=t=>!!(t&&(t.is_route||(STOPS[t.id]||[]).length));
 const clock=v=>typeof SHIFT_ctClock==="function"?SHIFT_ctClock(v):(v?new Date(v).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"");
 const stamp=v=>typeof SHIFT_ctStamp==="function"?SHIFT_ctStamp(v):(v||"");
@@ -122,20 +123,24 @@ window.updateMetrics=function(){let keep=allTasks;try{allTasks=allTasks.filter(t
 window.SHIFT_toggleCombined=function(){showCombined=!showCombined;sessionStorage.setItem("shift-show-combined",showCombined?"1":"0");load()};
 window.SHIFT_uncombine=async function(id){
   if(!confirm("Put this task back on the board as its own task? (The route keeps its stops.)"))return;
-  let r=await db.from("dispatch_tasks").update({combined_into_task_id:null}).eq("id",id);
+  let r=await db.from("dispatch_tasks").update({combined_into_task_id:null,no_auto_combine:true}).eq("id",id);
+  if(r.error&&/no_auto_combine/.test(r.error.message||""))r=await db.from("dispatch_tasks").update({combined_into_task_id:null}).eq("id",id);   // before SUPABASE-AUTO-TRIPS.sql
   if(r.error)return alert("Could not restore task: "+r.error.message);
   await load();
 };
 
 /* ---------- cards ---------- */
 const CHIP={pending:"○ Pending",arrived:"◐ Arrived",done:"✓ Done"};
+/* v4.10.0: who set the stop status — GPS (vzc-sync) or a person tapping the chip */
+function srcMark(s){if(!s||s.status==="pending")return "";const g=s.stop_status_source==="auto_gps";
+  return `<span class="auto-hint${g?"":" hand"}" title="${g?"Set from truck GPS":"Set by hand"}">${g?"GPS":"hand"}</span>`}
 function stopsHtml(t){
   let st=STOPS[t.id]||[];
   if(!st.length)return `<div class="route-stops"><div class="rs-row rs-origin">🏁 ${esc(t.pickup_name||"Start")}</div><div class="rs-row muted">Loading stops…</div></div>`;
   let rows=[`<div class="rs-row rs-origin"><span>🏁</span><span class="rs-name">${esc(t.pickup_name||"Start")}</span>${t.gps_departed_at?`<span class="rs-time">left ${esc(clock(t.gps_departed_at))}</span>`:""}</div>`];
   st.forEach(s=>{
     let r=range(s.gps_arrived_at,s.gps_departed_at),l=legText(s),k=CHIP[s.status]?s.status:"pending";
-    rows.push(`<div class="rs-row"><button type="button" class="rs-chip ${k}" data-stop="${s.stop_id}" title="Tap to advance: pending → arrived → done" onclick="event.stopPropagation();SHIFT_advanceStop(${s.stop_id})">${CHIP[k]}</button><span class="rs-name">${esc(s.location_name||"Stop")}</span>${r?`<span class="rs-time">${esc(r)}</span>`:""}${l?`<div class="rs-leg">(${esc(l)})</div>`:""}</div>`);
+    rows.push(`<div class="rs-row"><button type="button" class="rs-chip ${k}" data-stop="${s.stop_id}" title="Tap to advance: pending → arrived → done" onclick="event.stopPropagation();SHIFT_advanceStop(${s.stop_id})">${CHIP[k]}</button><span class="rs-name">${esc(s.location_name||"Stop")}</span>${r?`<span class="rs-time">${esc(r)}</span>`:""}${srcMark(s)}${l?`<div class="rs-leg">(${esc(l)})</div>`:""}</div>`);
   });
   return `<div class="route-stops" title="${esc(SHIFT_routeSummary(t))}">${rows.join("")}</div>`;
 }
@@ -347,7 +352,7 @@ window.SHIFT_buildRoute=function(list,skipStartPickups,returnOnce=true,order=nul
     let lbl=`#${t.id}`,P=(type,pal,mat,name)=>({task_id:t.id,type:type==="delivery"?"delivery":"pickup",pallets:pal??null,material:mat||null,name:name||null});
     seq.push({name:t.pickup_name,addr:t.pickup_address,type:"pickup",material:t.material,pallets:t.pallet_qty,notes:null,src:lbl,parts:[P("pickup",t.pallet_qty,t.material,t.pickup_name)]});
     let st=isRoute(t)?(STOPS[t.id]||[]):[];
-    if(st.length)st.forEach(s=>seq.push({name:s.location_name,addr:s.location_address,location_id:s.location_id,type:s.stop_type,material:s.material,pallets:s.pallet_qty,notes:s.notes,src:lbl,
+    if(st.length)st.forEach(s=>seq.push({from_stop_id:s.stop_id??null,name:s.location_name,addr:s.location_address,location_id:s.location_id,type:s.stop_type,material:s.material,pallets:s.pallet_qty,notes:s.notes,src:lbl,
       parts:(s.source_parts&&s.source_parts.length?s.source_parts:[{task_id:t.id,type:s.stop_type==="delivery"?"delivery":"pickup",pallets:s.pallet_qty,material:s.material,name:s.location_name}])}));
     else seq.push({name:t.delivery_name,addr:t.delivery_address,type:"delivery",material:t.material,pallets:t.pallet_qty,notes:null,src:lbl,parts:[P("delivery",t.pallet_qty,t.material,t.pickup_name)]});
   });
@@ -434,6 +439,24 @@ window.addEventListener("storage",e=>{if(e.key==="shift-route-plan"){const m=$("
     picked=ids.filter(id=>{const t=allTasks.find(x=>x.id===id);return t&&t.status!=="completed"&&!t.combined_into_task_id});cbUpdate(picked.length<ids.length?"Some planned tasks are done or already in a route and were left out.":"");render();
     if(picked.length>=2)SHIFT_openCombine()};setTimeout(go,600)})();
 window.SHIFT_closeCombine=function(){let m=$("combineModal");if(m)m.classList.remove("show")};
+/* v4.10.0: save a combined route. Prefers the shift_combine_tasks RPC (one transaction; the route inherits the truck, the
+   GPS cutoff = earliest assignment, and pickup/drop visits already seen). Falls back to the old inserts before the migration. */
+window.SHIFT_saveRoute=async function(list,r,payload,source,originTaskId){
+  const stopRow=(s,i)=>({seq:i+1,location_id:s.location_id||null,location_name:s.name||null,location_address:s.addr||null,stop_type:s.type,material:s.material||null,pallet_qty:s.pallets??null,notes:s.notes||null,source_task_ids:[...new Set(s.parts.map(p=>Number(p.task_id)))],source_parts:s.parts});
+  let rpc=await db.rpc("shift_combine_tasks",{p_task_ids:list.map(t=>t.id),p_route:{...payload,origin_task_id:originTaskId??list[0].id},
+    p_stops:r.stops.map((s,i)=>({...stopRow(s,i),from_stop_id:s.parts.length&&s.from_stop_id?s.from_stop_id:null,final_return:!!s.finalReturn})),p_source:source||"manual"});
+  if(!rpc.error)return rpc.data;
+  const missing=rpc.error.code==="PGRST202"||rpc.error.code==="42883"||/could not find the function|does not exist/i.test(rpc.error.message||"");
+  if(!missing||source==="auto")throw new Error("Could not create the route: "+rpc.error.message);
+  let ins=await db.from("dispatch_tasks").insert(payload).select("id").single();
+  if(ins.error)throw new Error("Could not create the route: "+ins.error.message);
+  let newId=ins.data.id;
+  let si=await db.from("dispatch_task_stops").insert(r.stops.map((s,i)=>({task_id:newId,...stopRow(s,i)})));
+  if(si.error){await db.from("dispatch_tasks").delete().eq("id",newId).eq("is_route",true);throw new Error("Could not save the stops (nothing was changed): "+si.error.message)}
+  let up=await db.from("dispatch_tasks").update({combined_into_task_id:newId}).in("id",list.map(t=>t.id));
+  if(up.error)alert(`Route #${newId} was created, but the original tasks could not be marked as combined: ${up.error.message}`);
+  return newId;
+};
 window.SHIFT_createRoute=async function(){
   let list=pickedTasks();if(list.length<2)return;
   let r=cmbBuild();if(r.warn.length&&!confirm("Check the stop order:\n"+r.warn.join("\n")+"\n\nCreate the route anyway?"))return;if(!r.stops.length)return alert("Nothing to route — every stop is the start location.");
@@ -450,14 +473,7 @@ window.SHIFT_createRoute=async function(){
       job_client:uniqJoin(list.map(t=>t.job_client)),material:uniqJoin(list.map(t=>t.material)),pallet_qty:pallets.length?pallets.reduce((a,b)=>a+b,0):null,
       instructions:[`Combined from tasks ${list.map(t=>"#"+t.id).join(", ")}.`,...list.filter(t=>t.instructions).map(t=>`#${t.id}: ${t.instructions}`)].join("\n"),
       assigned_driver_id:driver,sort_order:driver&&Number(first.assigned_driver_id)===driver?(first.sort_order||0):999,is_route:true};
-    let ins=await db.from("dispatch_tasks").insert(payload).select("id").single();
-    if(ins.error)throw new Error("Could not create the route: "+ins.error.message);
-    let newId=ins.data.id;
-    let stops=r.stops.map((s,i)=>({task_id:newId,seq:i+1,location_id:s.location_id||null,location_name:s.name||null,location_address:s.addr||null,stop_type:s.type,material:s.material||null,pallet_qty:s.pallets??null,notes:s.notes||null,source_task_ids:[...new Set(s.parts.map(p=>Number(p.task_id)))],source_parts:s.parts}));
-    let si=await db.from("dispatch_task_stops").insert(stops);
-    if(si.error){await db.from("dispatch_tasks").delete().eq("id",newId).eq("is_route",true);throw new Error("Could not save the stops (nothing was changed): "+si.error.message)}
-    let up=await db.from("dispatch_tasks").update({combined_into_task_id:newId}).in("id",list.map(t=>t.id));
-    if(up.error)alert(`Route #${newId} was created, but the original tasks could not be marked as combined: ${up.error.message}`);
+    let newId=await SHIFT_saveRoute(list,r,payload,"manual");
     SHIFT_cancelCombine();await load();
   }catch(e){alert(e.message||e)}
   finally{btn.disabled=false;btn.textContent="Create route"}

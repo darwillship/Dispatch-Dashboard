@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SHIFT Dispatch</title><meta name="shift-version" content="v4.9.3"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<title>SHIFT Dispatch</title><meta name="shift-version" content="v4.10.0"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#080d14;--panel:#0e1621;--panel2:#111c29;--card:#131f2d;--ink:#f5f7fa;--muted:#8fa0b5;--line:#203246;--blue:#0a84ff;--cyan:#00c6ff;--green:#22c55e;--amber:#ffc107;--purple:#986cff;--red:#ef5350;--steel:#a5b0be;--shadow:0 14px 38px rgba(0,0,0,.25)}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#102c4d 0,#080d14 38%,#060a10 100%);color:var(--ink);font:14px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
@@ -965,6 +965,11 @@ body.light-mode input[type="date"]::-webkit-calendar-picker-indicator{filter:non
 .route-status.in_progress{color:#ffc23d;background:rgba(255,176,32,.12)}
 .route-status.completed{color:#75e79a;background:rgba(105,223,145,.12)}
 .auto-hint{font-size:8.5px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;margin-left:4px;padding:2px 5px;border-radius:5px;color:#9fd3ff;background:rgba(10,132,255,.10);border:1px dashed rgba(102,177,255,.45);cursor:help}
+.auto-hint.hand{color:#c9b38a;background:rgba(255,176,32,.08);border-color:rgba(255,193,61,.35)}
+.auto-hint.warn{color:#ffb4a8;background:rgba(255,90,70,.12);border:1px solid rgba(255,120,100,.5);text-transform:none;letter-spacing:0}
+.rs-row .auto-hint{margin-left:2px}
+#autoTripsBtn.off{opacity:.6}
+.auto-trip-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9999;background:#15293a;color:#dcecf8;border:1px solid #31516a;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700;box-shadow:0 6px 24px rgba(0,0,0,.4);display:flex;gap:10px;align-items:center}
 .asap-chip{font-weight:700;color:#8fa6ba;font-style:italic}
 .sched-pair{display:flex;gap:6px;align-items:center}.sched-pair input{flex:1;min-width:0}.opt-hint{font-weight:500;opacity:.7;text-transform:none}
 .route-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
@@ -1284,7 +1289,14 @@ function fmt(v){return v?new Date(v).toLocaleString([],{month:"short",day:"numer
 function syncSched(){let d=$("schedDate").value,t=$("schedTime").value;$("scheduled").value=d&&t?d+"T"+t:""}
 function setSched(v){v=v?String(v):"";$("schedDate").value=v.slice(0,10)||boardDate;$("schedTime").value=v.length>10?v.slice(11,16):"";syncSched()}
 function schedWorkDate(){return $("schedDate").value||boardDate}
-function autoHint(t){if(t.status_source!=="auto_gps")return "";let at=t.status_auto_at?new Date(t.status_auto_at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"";return `<span class="auto-hint" title="Status set automatically from truck GPS${at?" at "+at:""}. Changing it by hand turns auto off for this task.">auto</span>`}
+/* v4.10.0: every assigned status shows who set it — "GPS" (vzc-sync) or "set by hand"; plus a warning when a task was
+   completed by hand but GPS never saw the truck there (status_flag from vzc-sync v20). */
+function autoHint(t){
+ const clk=v=>v?new Date(v).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):"";
+ let flag=t.status_flag==="manual_complete_no_gps"?`<span class="auto-hint warn" title="Marked complete by hand, but truck GPS shows no visit at the drop for this task. Check with the driver.">⚠ Complete by hand, no GPS visit</span>`:"";
+ if(t.status_source==="auto_gps"){let at=clk(t.status_auto_at);return `<span class="auto-hint" title="Status set automatically from truck GPS${at?" at "+at:""}. Changing it by hand turns auto off for this task (GPS still completes it when the truck reaches the drop).">GPS</span>`+flag}
+ if(t.status_source==="manual"||t.status==="in_progress"||t.status==="completed")return `<span class="auto-hint hand" title="Status set by hand on the board or by the driver.">set by hand</span>`+flag;
+ return flag}
 function options(){let built=LOC.map((x,i)=>`<option value="builtin:${i}">${x[0]}</option>`).join("");let saved=savedLocations.map(x=>`<option value="saved:${x.id}">${esc(x.name)}</option>`).join("");return '<option value="">Select…</option>'+built+(saved?'<optgroup label="Saved Customers">'+saved+'</optgroup>':'')+'<option value="custom">+ Type a new location…</option>'}
 function taskCard(t){
  let st=(t.status||"pending").toLowerCase().replace(" ","_");
@@ -1725,7 +1737,7 @@ async function quickAvailability(driverId,status){
  if(r.error)return alert(r.error.message);
  await load();
 }
-</script><script src="shift-features.js?v=4.9.3"></script><script src="pretrip-exceptions.js?v=4.9.3"></script><script src="timesheet-features.js?v=4.9.3"></script><script src="truck-features.js?v=4.9.3"></script><script src="gps-features.js?v=4.9.3"></script><script src="routes-features.js?v=4.9.3"></script><script src="live-features.js?v=4.9.3"></script><script src="unplanned-features.js?v=4.9.3"></script><script src="eta.js?v=4.9.3"></script><script src="trucks-board.js?v=4.9.3"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
+</script><script src="shift-features.js?v=4.10.0"></script><script src="pretrip-exceptions.js?v=4.10.0"></script><script src="timesheet-features.js?v=4.10.0"></script><script src="truck-features.js?v=4.10.0"></script><script src="gps-features.js?v=4.10.0"></script><script src="routes-features.js?v=4.10.0"></script><script src="auto-trips.js?v=4.10.0"></script><script src="live-features.js?v=4.10.0"></script><script src="unplanned-features.js?v=4.10.0"></script><script src="eta.js?v=4.10.0"></script><script src="trucks-board.js?v=4.10.0"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
  <div class="shift-cal" role="dialog" aria-modal="true" aria-label="Select date">
   <div class="shift-cal-head">
    <button type="button" onclick="changeCalMonth(-1)">‹</button>
