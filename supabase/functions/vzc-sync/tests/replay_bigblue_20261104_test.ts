@@ -96,7 +96,10 @@ Deno.test("singles #305/#306 before combining: pickup visits saved as soon as GP
   assert(m306.partial && m305.partial);
   assertEquals(ct(m306.origin?.arrived), "8:58:50 AM");
   assertEquals(ct(m305.origin?.arrived), "9:23:04 AM");
-  const p = M.buildPatches(m306, single(306, UNIV, C306, A306), "x")[0];
+  const ps = M.buildPatches(m306, single(306, UNIV, C306, A306), "x"), p = ps.find((x) => x.nullCols.length)!;
+  // v4.10.1: #306 was assigned at 8:56 AM, after Big Blue left McCook at 8:30:22 AM → its window starts there
+  assertEquals(ct(m306.gate), "8:30:22 AM");
+  assertEquals(ps.find((x) => x.since)?.since, "2026-11-04T14:30:22.000Z");
   assertEquals(p.set.gps_origin_arrived_at, "2026-11-04T14:58:50.000Z");
   assertEquals(p.set.gps_departed_at, "2026-11-04T15:08:04.000Z");
   // in progress from the pickup departure, not completed yet

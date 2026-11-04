@@ -220,6 +220,9 @@ export interface TaskTarget {
   gpsSince?: number | null;
   /** v4.10.0: ids of the original tasks combined into this route. Their stored visits are not "someone else's". */
   memberIds?: number[];
+  /** v4.10.1: created/assigned times of the ORIGINAL tasks of a combined route (nested routes flattened). The route's
+   *  window starts at the earliest late-assignment gate of these (see lateAssignGate), never later than gps_since. */
+  members?: { createdAt: number | null; assignedAt: number | null }[];
 }
 /** A destination (or stop) visit already recorded in the DB — used so a filled task's visit can't be re-claimed by a later open task. */
 export interface ClaimedVisit { vehicleId: number; arrived: number; ownerTaskId: number; ownerStopId?: number | null }
@@ -240,6 +243,10 @@ export interface TaskMatch {
   /** v4.10.0: single task where only the pickup visit has been seen so far (dest is null). */
   partial?: boolean;
   split?: TripSplit | null;
+  /** v4.10.1: the GPS window start actually used for this task on this truck. */
+  gate?: number | null;
+  /** v4.10.1: the origin is the McCook yard (its "arrival" is clamped to the window start — the truck may have sat there overnight). */
+  originBase?: boolean;
 }
 
 const sameSpot = (a: Place | null, b: Place | null) =>
@@ -266,6 +273,21 @@ export function gpsGate(createdAt: number | null | undefined, assignedAt: number
 export function taskGate(task: Pick<TaskTarget, "gpsSince" | "createdAt" | "assignedAt">): number | null {
   return task.gpsSince != null && !isNaN(task.gpsSince) ? task.gpsSince : gpsGate(task.createdAt, task.assignedAt);
 }
+/**
+ * v4.10.1 late assignment: a task assigned after it was created starts its GPS window at the end of the truck's previous
+ * trip = the truck's last McCook departure at/before the assignment (same day), instead of at the assignment time.
+ * Never before created_at. Unchanged when there is no such departure, when the truck was sitting at McCook at the
+ * assignment time (nothing happened yet), or when the task was assigned as it was created.
+ */
+export function lateAssignGate(createdAt: number | null | undefined, assignedAt: number | null | undefined,
+  baseVisits: { arrived: number; departed: number | null }[], dayStart: number): number | null {
+  const g = gpsGate(createdAt, assignedAt);
+  if (g == null || assignedAt == null || isNaN(assignedAt) || createdAt == null || isNaN(createdAt) || assignedAt <= createdAt) return g;
+  if (baseVisits.some((b) => b.arrived <= assignedAt && (b.departed == null || b.departed > assignedAt))) return g; // at McCook when assigned
+  const deps = baseVisits.map((b) => b.departed).filter((d): d is number => d != null && d <= assignedAt && d >= dayStart);
+  if (!deps.length) return g;
+  return Math.max(createdAt, Math.max(...deps));
+}
 /** v4.4.1: pickup = goods come back to McCook (task_type pickup, or destination is the yard and the origin is not). */
 export function isPickupTask(taskType: any, destIsBase: boolean, originIsBase: boolean): boolean {
   return String(taskType || "").toLowerCase() === "pickup" || (destIsBase && !originIsBase);
@@ -283,6 +305,17 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
     return cache.get(k)!;
   };
   const inWin = (x: Visit) => !x.clipped && x.arrived >= input.winStart && x.arrived <= input.winEnd;
+  /** v4.10.1: window start for this task on this truck — late assignments reach back to the truck's last McCook departure.
+   *  Routes: earliest gate of their original tasks, never later than the stored gps_since. Split trips (no originals): gps_since. */
+  const gateFor = (task: TaskTarget, v: VehicleTrack): number | null => {
+    const stored = task.gpsSince != null && !isNaN(task.gpsSince) ? task.gpsSince : null;
+    const bv = visits(v, input.base);
+    const xs = (task.members?.length ? task.members : task.kind === "single" && stored == null ? [{ createdAt: task.createdAt, assignedAt: task.assignedAt ?? null }] : [])
+      .map((m) => lateAssignGate(m.createdAt, m.assignedAt, bv, input.winStart)).filter((x): x is number => x != null);
+    const late = xs.length ? Math.min(...xs) : null;
+    if (stored != null) return late != null ? Math.min(stored, late) : stored;
+    return late ?? taskGate(task);
+  };
   const used = new Set<string>();
   const useKey = (vid: number, x: Visit) => `${vid}|${x.placeKey}|${x.arrived}`;
   /** True when another task/stop already owns this physical visit (DB claim or this-run claim). */
@@ -296,11 +329,11 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
    * After-the-fact entry (whole visit ended before created_at − grace): allow only when unclaimed, with a score penalty.
    * Manual anchors (existing gps_* within ANCHOR_MS) skip the gate so a typed time still wins.
    */
-  const timeOk = (task: TaskTarget, ov: Visit | null, dv: Visit, hasManualAnchor: boolean): { ok: boolean; afterFact: boolean } => {
+  const timeOk = (task: TaskTarget, v: VehicleTrack, dv: Visit, hasManualAnchor: boolean): { ok: boolean; afterFact: boolean } => {
     // v4.4.1: no more "after-the-fact" matches. The destination arrival (and for pickups the pickup departure)
-    // must be at/after max(created_at, assigned_at). Typed (manual) anchors still win.
+    // must be at/after the window start (v4.10.1: gateFor). Typed (manual) anchors still win.
     if (hasManualAnchor) return { ok: true, afterFact: false };
-    const gate = taskGate(task);
+    const gate = gateFor(task, v);
     if (gate != null && dv.arrived < gate) return { ok: false, afterFact: false };
     if (task.scheduledAt == null || gate == null) return { ok: true, afterFact: false };
     return { ok: true, afterFact: false };
@@ -325,7 +358,6 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
   // (gps_since, else max(created_at, assigned_at)); typed/stored times still anchor within ANCHOR_MS.
   // A return to McCook after some stops are finished while others are still open = the trip ends there (split).
   for (const task of input.tasks.filter((t) => t.kind === "route")) {
-    const gate = taskGate(task);
     const n = task.stops.length;
     const last = task.stops[n - 1];
     const finalBase = !!last && (!!last.place.isBase || sameSpot(last.place, input.base));
@@ -335,6 +367,7 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
     const finalAnchor = finalBase ? toMs(last.existing.gps_arrived_at) : null;
     let best: TaskMatch | null = null;
     for (const v of vehiclesFor(task)) {
+      const gate = gateFor(task, v);
       const taken = new Set<string>();
       const free = (x: Visit) => !used.has(useKey(v.vehicleId, x)) && !taken.has(useKey(v.vehicleId, x)) && !claimedByOther(v.vehicleId, x.arrived, task.id);
       const ok = (x: Visit, anchor: number | null) => inWin(x) && free(x) &&
@@ -391,7 +424,7 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
         const ds = chain.filter(Boolean).map((x) => x!.distM ?? 0);
         best = {
           taskId: task.id, kind: "route", vehicleId: v.vehicleId, vehicleName: v.name, planned, score,
-          origin: ov, dest: null, returnedBase: ret?.arrived ?? null, split,
+          origin: ov, dest: null, returnedBase: ret?.arrived ?? null, split, gate, originBase: oBase,
           stops: task.stops.map((s, i) => ({ stopId: s.id, seq: s.seq, visit: chain[i], isFinalBase: finalBase && i === n - 1 })),
           method: `${any.method}:${planned ? "planned_truck" : "other_truck"}`,
           distM: ds.length ? Math.max(...ds) : ov?.distM ?? null,
@@ -406,34 +439,37 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
   }
 
   // ---- single tasks: score every (truck, destination visit), then assign best-first; a visit is used once ----
-  type Cand = { task: TaskTarget; v: VehicleTrack; dv: Visit; ov: Visit | null; score: number; planned: boolean };
+  type Cand = { task: TaskTarget; v: VehicleTrack; dv: Visit; ov: Visit | null; score: number; planned: boolean; gate: number | null; oBase: boolean };
   const cands: Cand[] = [];
   const singles = input.tasks.filter((t) => t.kind === "single");
   for (const task of singles) {
     if (!task.dest) continue;
     const exArr = toMs(task.existing.gps_arrived_at), exDep = toMs(task.existing.gps_departed_at);
+    const oBase = !!task.origin && (!!task.origin.isBase || sameSpot(task.origin, input.base));
     for (const v of vehiclesFor(task)) {
+      const g = gateFor(task, v);
       const dvs = visits(v, task.dest).filter(inWin);
       const ovs = task.origin && !sameSpot(task.origin, task.dest) ? visits(v, task.origin).filter((o) => o.departed != null) : [];
       for (const dv of dvs) {
         if (used.has(useKey(v.vehicleId, dv)) || claimedByOther(v.vehicleId, dv.arrived, task.id)) continue;
         if (exArr != null && Math.abs(dv.arrived - exArr) > ANCHOR_MS) continue;
-        let ov = [...ovs].reverse().find((o) => o.departed! <= dv.arrived && o.departed! >= input.winStart - 12 * 3600e3) ?? null;
+        // v4.10.1: a pickup only counts as reached at/after the window start (McCook: the truck may have been parked there before it)
+        let ov = [...ovs].reverse().find((o) => o.departed! <= dv.arrived && o.departed! >= input.winStart - 12 * 3600e3 &&
+          (oBase || exDep != null || g == null || o.arrived >= g)) ?? null;
         // this destination stop must be the first one after leaving the origin
         if (ov && dvs.some((d2) => d2 !== dv && d2.arrived >= ov!.departed! && d2.arrived < dv.arrived)) ov = null;
         if (exDep != null && (!ov || Math.abs(ov.departed! - exDep) > ANCHOR_MS) && exArr == null) continue;
-        const gate = timeOk(task, ov, dv, exArr != null || exDep != null);
+        const gate = timeOk(task, v, dv, exArr != null || exDep != null);
         if (!gate.ok) continue;
         {
-          const dBase = !!task.dest.isBase || sameSpot(task.dest, input.base), oBase = !!task.origin && (!!task.origin.isBase || sameSpot(task.origin, input.base));
+          const dBase = !!task.dest.isBase || sameSpot(task.dest, input.base);
           if (isPickupTask(task.existing.task_type, dBase, oBase) && exArr == null) {
-            const g = taskGate(task);
             if (!ov || ov.departed == null || (g != null && ov.departed < g)) continue;   // never "returned to base" without visiting the pickup first
           }
         }
         const planned = v.vehicleId === task.plannedVehicleId;
         const score = (planned ? 4 : 0) + (ov ? 3 : 0) + timeBonus(task, dv.arrived) - (gate.afterFact ? 5 : 0) - dv.arrived / 1e14;
-        cands.push({ task, v, dv, ov, score, planned });
+        cands.push({ task, v, dv, ov, score, planned, gate: g, oBase });
       }
     }
   }
@@ -448,16 +484,17 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
     matches.push({
       taskId: c.task.id, kind: "single", vehicleId: c.v.vehicleId, vehicleName: c.v.name, planned: c.planned, score: c.score,
       origin: c.ov, dest: c.dv, returnedBase: destIsBase ? c.dv.arrived : firstBaseAfter(c.v, c.dv.departed), stops: [],
-      method: `${c.dv.method}:${c.planned ? "planned_truck" : "other_truck"}`, distM: c.dv.distM,
+      method: `${c.dv.method}:${c.planned ? "planned_truck" : "other_truck"}`, distM: c.dv.distM, gate: c.gate, originBase: c.oBase,
     });
   }
   // v4.10.0: pickup seen, delivery not yet → record the pickup visit now (gps_origin_arrived_at / gps_departed_at).
   for (const t of singles) {
     if (done.has(t.id) || !t.origin || t.origin.isBase || sameSpot(t.origin, input.base) || sameSpot(t.origin, t.dest)) continue;
     if (toMs(t.existing.gps_arrived_at) != null) continue;
-    const g = taskGate(t), exDep = toMs(t.existing.gps_departed_at), exOA = toMs(t.existing.gps_origin_arrived_at);
+    const exDep = toMs(t.existing.gps_departed_at), exOA = toMs(t.existing.gps_origin_arrived_at);
     let bp: TaskMatch | null = null;
     for (const v of vehiclesFor(t)) {
+      const g = gateFor(t, v);
       const ov = visits(v, t.origin).find((o) => inWin(o) &&
         (exOA != null ? Math.abs(o.arrived - exOA) <= ANCHOR_MS : exDep != null ? o.departed != null && Math.abs(o.departed - exDep) <= ANCHOR_MS : g == null || o.arrived >= g));
       if (!ov) continue;
@@ -465,7 +502,7 @@ export function matchDay(input: DayInput): { matches: TaskMatch[]; unmatched: { 
       const score = (planned ? 4 : 0) - ov.arrived / 1e14;
       if (!bp || score > bp.score) bp = {
         taskId: t.id, kind: "single", vehicleId: v.vehicleId, vehicleName: v.name, planned, score, origin: ov, dest: null,
-        returnedBase: null, stops: [], method: `${ov.method}:pickup_seen:${planned ? "planned_truck" : "other_truck"}`, distM: ov.distM, partial: true,
+        returnedBase: null, stops: [], method: `${ov.method}:pickup_seen:${planned ? "planned_truck" : "other_truck"}`, distM: ov.distM, partial: true, gate: g, originBase: false,
       };
     }
     if (bp) { matches.push(bp); done.add(t.id); }
@@ -503,7 +540,7 @@ export function autoStatusFor(t: Record<string, any>, stopRows: Record<string, a
   // v4.4.1 rules. Only GPS at/after the trip cutoff counts (gps_since, else max(created_at, assigned_at)).
   //  DELIVERY: completed on geofence arrival at the delivery address (completed_at = arrival).
   //  PICKUP:   completed on arrival back at McCook, after the truck left the pickup address (both after the gate).
-  const gate = ms(t.gps_since) ?? gpsGate(ms(t.created_at), ms(t.assigned_at));
+  const gate = m?.gate ?? ms(t.gps_since) ?? gpsGate(ms(t.created_at), ms(t.assigned_at));   // v4.10.1: the matcher's window start wins
   const okT = (x: number | null) => x != null && (gate == null || x >= gate);
   const terminal = normalizeAddress(t.delivery_address) === BASE_NORM;
   const originBase = normalizeAddress(t.pickup_address) === BASE_NORM;
@@ -547,7 +584,9 @@ export function selfCorrections(tasks: Record<string, any>[], stopsByTask: Map<n
 }
 
 // ---------- patches (only fields that are still NULL) ----------
-export interface Patch { table: "dispatch_tasks" | "dispatch_task_stops"; id: number; set: Record<string, any>; nullCols: string[]; status?: { to: string; from: string[] } }
+export interface Patch { table: "dispatch_tasks" | "dispatch_task_stops"; id: number; set: Record<string, any>; nullCols: string[]; status?: { to: string; from: string[] };
+  /** v4.10.1: move dispatch_tasks.gps_since EARLIER to this ISO time (late assignment); written only if empty or later. */
+  since?: string }
 const iso = (t: number | null | undefined) => (t == null ? null : new Date(t).toISOString());
 
 function onlyNull(existing: Record<string, any>, want: Record<string, any>): Record<string, any> {
@@ -575,23 +614,30 @@ export function buildPatches(m: TaskMatch, task: TaskTarget, nowIso: string): Pa
     out.push({ table, id, set, nullCols, status });
   };
   const ex = task.existing;
+  // v4.10.1: McCook origin — the truck may have been parked there overnight; the trip starts no earlier than the window start
+  const oArr = (o: Visit | null | undefined) => (o == null ? null : m.originBase && m.gate != null ? Math.max(o.arrived, m.gate) : o.arrived);
+  // v4.10.1: keep the late-assignment window start on the task so status checks and later runs use it
+  {
+    const def = gpsGate(task.createdAt, task.assignedAt ?? null), cur = task.gpsSince ?? null;
+    if (m.gate != null && (cur != null ? m.gate < cur : def != null && m.gate < def)) out.push({ table: "dispatch_tasks", id: task.id, set: {}, nullCols: [], since: iso(m.gate)! });
+  }
   if (m.kind === "single" && !m.dest) {
     // v4.10.0: pickup seen, delivery not yet
     finish("dispatch_tasks", task.id, ex, {
-      gps_origin_arrived_at: iso(m.origin?.arrived), gps_departed_at: iso(m.origin?.departed), gps_origin_engine_on_at: iso(m.origin?.engineOn),
+      gps_origin_arrived_at: iso(oArr(m.origin)), gps_departed_at: iso(m.origin?.departed), gps_origin_engine_on_at: iso(m.origin?.engineOn),
       gps_vehicle_id: m.vehicleId, gps_match_method: m.method,
     });
   } else if (m.kind === "single") {
     const d = m.dest!, terminal = !!task.dest?.isBase;
     const want: Record<string, any> = {
-      gps_origin_arrived_at: iso(m.origin?.arrived), gps_departed_at: iso(m.origin?.departed), gps_origin_engine_on_at: iso(m.origin?.engineOn),
+      gps_origin_arrived_at: iso(oArr(m.origin)), gps_departed_at: iso(m.origin?.departed), gps_origin_engine_on_at: iso(m.origin?.engineOn),
       ...visitFields(d, m.vehicleId, m.method, terminal), gps_left_destination_at: terminal ? null : iso(d.departed),
       gps_returned_base_at: iso(m.returnedBase),
     };
     finish("dispatch_tasks", task.id, ex, want);
   } else {
     finish("dispatch_tasks", task.id, ex, {
-      gps_origin_arrived_at: iso(m.origin?.arrived), gps_departed_at: iso(m.origin?.departed), gps_origin_engine_on_at: iso(m.origin?.engineOn),
+      gps_origin_arrived_at: iso(oArr(m.origin)), gps_departed_at: iso(m.origin?.departed), gps_origin_engine_on_at: iso(m.origin?.engineOn),
       gps_returned_base_at: iso(m.returnedBase), gps_vehicle_id: m.vehicleId, gps_match_method: m.method,
     });
     for (const sm of m.stops) {

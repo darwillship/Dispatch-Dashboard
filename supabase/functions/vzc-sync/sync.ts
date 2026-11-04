@@ -302,6 +302,13 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
         .map((o) => M.gpsGate(o.created_at ? Date.parse(o.created_at) : null, o.assigned_at ? Date.parse(o.assigned_at) : null)).filter((x): x is number => x != null);
       return gs.length ? Math.min(...gs) : null;
     };
+    // v4.10.1: the ORIGINAL tasks of a combined route, nested routes flattened (route #312 = #310 [#307, #309] + #311)
+    const originalsOf = (routeId: number, seen = new Set<number>()): any[] => {
+      if (seen.has(routeId)) return []; seen.add(routeId);
+      return ((trows || []) as any[]).filter((o) => o.combined_into_task_id === routeId)
+        .flatMap((o) => (o.is_route ? [o, ...originalsOf(o.id, seen)] : [o]));
+    };
+    const ms0 = (x: any) => (x ? Date.parse(x) : null);
     if (opt.recompute && opt.dryRun) {   // compare mode: pretend nothing is stored yet (never used for writes)
       for (const t of (trows || []) as any[]) for (const c of Object.keys(t)) if (c.startsWith("gps_")) t[c] = null;
       for (const s of (srows || []) as any[]) { for (const c of Object.keys(s)) if (c.startsWith("gps_")) s[c] = null; s.status = "pending"; }
@@ -345,6 +352,7 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
         vehicleLocked: t.vehicle_id != null,
         gpsSince: t.gps_since ? Date.parse(t.gps_since) : t.is_route ? memberGate(t.id) : null,
         memberIds: t.is_route ? (trows || []).filter((o: any) => o.combined_into_task_id === t.id).map((o: any) => Number(o.id)) : [],
+        members: t.is_route ? originalsOf(t.id).filter((o) => !o.is_route).map((o) => ({ createdAt: ms0(o.created_at), assignedAt: ms0(o.assigned_at) })) : undefined,
         shiftWindows: t.assigned_driver_id ? dayShifts.filter((s) => s.driverId === Number(t.assigned_driver_id) && s.date === date && A.clear(s)).map((s) => [s.start!, s.end!] as [number, number]) : null,
       });
     }
@@ -404,10 +412,15 @@ async function runSyncInner(env: Env, opt: SyncOptions) {
       const patches = M.buildPatches(m, task, nowIso);
       dsum.matched.push({
         task_id: m.taskId, title: task.title, truck: m.vehicleName, planned_truck: m.planned, method: m.method,
-        fills: patches.map((p) => ({ table: p.table, id: p.id, status: p.status?.to, set: Object.fromEntries(Object.entries(p.set).filter(([k]) => k !== "gps_updated_at").map(([k, v]) => [k, typeof v === "string" && /_at$/.test(k) ? M.ctClock(Date.parse(v)) : v])) })),
+        fills: patches.map((p) => ({ table: p.table, id: p.id, status: p.status?.to, since: p.since ? M.ctClock(Date.parse(p.since)) : undefined, set: Object.fromEntries(Object.entries(p.set).filter(([k]) => k !== "gps_updated_at").map(([k, v]) => [k, typeof v === "string" && /_at$/.test(k) ? M.ctClock(Date.parse(v)) : v])) })),
       });
       if (!dsum.writes_allowed) continue;
       for (const p of patches) {
+        if (p.since && v410 && p.table === "dispatch_tasks") {   // v4.10.1: late assignment → window starts at the truck's last McCook departure
+          const { error, count } = await db.from("dispatch_tasks").update({ gps_since: p.since }, { count: "exact" }).eq("id", p.id).or(`gps_since.is.null,gps_since.gt.${p.since}`);
+          if (error) dsum.write_errors.push(`dispatch_tasks #${p.id} gps_since: ${error.message}`);
+          else { dsum.writes += count || 0; const r = ((trows || []) as any[]).find((x) => x.id === p.id); if (r && count) r.gps_since = p.since; }
+        }
         if (p.nullCols.length) {
           let q = db.from(p.table).update(p.set, { count: "exact" }).eq("id", p.id);
           for (const c of p.nullCols) q = q.is(c, null);   // only-if-still-empty, enforced in the UPDATE itself

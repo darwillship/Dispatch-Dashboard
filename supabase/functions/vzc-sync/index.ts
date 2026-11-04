@@ -1,4 +1,6 @@
 // vzc-sync — Verizon Connect Reveal → SHIFT Dispatch Dashboard GPS updater (Supabase Edge Function, verify_jwt = false).
+// v21 (SHIFT v4.10.1): late assignment — the GPS window starts at the truck's last McCook departure (lateAssignGate), saved
+//   to gps_since; pickups count only at/after the window start; McCook origin arrival clamped to it. NOT DEPLOYED yet.
 // v20 (SHIFT v4.10.0): trip GPS cutoff from the combined originals, McCook-return split (vzc_split_trip), single-task pickup
 //   visits, self-correction (stops/trips GPS proved, forced GPS completion, "complete by hand, no GPS visit" flag). See README-FIRST.txt.
 //

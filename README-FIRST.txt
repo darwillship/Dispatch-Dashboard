@@ -341,3 +341,20 @@ v4.10.0 (Nov 4 2026) — Auto trips + GPS self-correction (vzc-sync v20). Needs 
    stop status trigger records hand vs GPS; dispatch_route_stops_v adds stop_status_source, stop_status_auto_at, source_parts.
  - Tests: supabase/tests/auto-trips (Postgres, 24 checks) and supabase/functions/vzc-sync/tests (deno, incl. the Big Blue
    11/04/2026 replay). vzc-sync v20 also runs before the migration (new writes switched off, noted in the run summary).
+
+v4.10.1 (Nov 4 2026) — Late assignments + trips split at McCook (vzc-sync v21). NOT deployed; needs Jonathan's OK.
+ - Late assignment (vzc-sync): a task assigned after it was created starts its GPS window at the end of the truck's previous
+   trip — its last McCook departure at/before the assignment (same day, never before created_at) — instead of the
+   assignment time. Unchanged if the truck was parked at McCook when assigned. Combined routes use the earliest window of
+   their ORIGINAL tasks (nested routes flattened). The window is saved to gps_since (only ever moved earlier).
+   Today's case: #307/#309 assigned 12:43 PM after Big Blue had already picked both up (Federal Envelope 11:35 AM,
+   Add Value 12:00 PM) on the trip that left McCook 10:37:53 AM.
+ - Pickups count only when reached at/after the window start; a McCook origin "arrival" is clamped to the window start
+   (no more overnight McCook arrival on a morning task).
+ - Auto trips (auto-trips.js): stops are ordered by the truck's actual recorded visits (vehicle_stop_events, address match
+   with house-number tolerance), and a McCook return splits the trip — tasks the truck finished before returning to
+   McCook are not combined with newer work (e.g. #311 is no longer merged with the finished #307/#309 trip).
+ - SUPABASE-V4101-NESTED-ROUTES.sql (additive trigger): a route combined into another route (e.g. #310 inside #312)
+   completes when all of its tasks are completed. Apply before/with the deploy.
+ - Tests: supabase/functions/vzc-sync/tests/replay_bigblue_20261104_pm_test.ts (Deno), tests/auto-trips-board.test.js
+   (node), tests/nested-routes-scenario.sql (scratch Postgres).

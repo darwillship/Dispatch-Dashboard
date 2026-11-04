@@ -3,6 +3,9 @@
    (same as ⛓ Combine, made with source "auto"). The route inherits the truck, the GPS cutoff (earliest assignment) and any
    pickup/drop visits GPS already saw, so nothing is lost. Stops go in the order GPS saw them; the rest keep the plan order.
    ↩ Undo (toast) or ↩ Restore on a task puts it back and keeps it out of auto-combine.
+   v4.10.1: stops are ordered by the truck's ACTUAL recorded visits (vehicle_stop_events, from each task's window start —
+   a late assignment reaches back to the truck's last McCook departure), and a McCook return splits the trip: tasks the
+   truck already finished before returning to McCook belong to that earlier trip and are not combined with newer work.
    vzc-sync v20 then: splits the trip when the truck returns to McCook between stops (new trip from McCook), completes stops
    and trips from GPS, and flags a hand-completed task GPS never saw.  Turn off: ⚙ "Auto trips" button (per browser). */
 (function(){
@@ -11,6 +14,54 @@
   const todayCT=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"America/Chicago"}).format(new Date());
   const ms=v=>v?Date.parse(v):null;
   let busy=false,lastTry={};
+  /* ---- v4.10.1: the truck's real visits ---- */
+  const EV={};                                                                   // vehicle_id → stop events (boardDate)
+  const BASE_RX=/8701\s+47th/i;
+  const isBaseAddr=a=>BASE_RX.test(String(a||""));
+  const SUF={street:"st",st:"st",avenue:"ave",ave:"ave",av:"ave",drive:"dr",dr:"dr",road:"rd",rd:"rd",boulevard:"blvd",blvd:"blvd",parkway:"pkwy",pkwy:"pkwy",lane:"ln",ln:"ln",court:"ct",ct:"ct",place:"pl",pl:"pl",highway:"hwy",hwy:"hwy",north:"n",n:"n",south:"s",s:"s",east:"e",e:"e",west:"w",w:"w"};
+  function addrKey(a){                                                            // "910 Carlow Dr Ste A, Bolingbrook" → {num:910, street:"carlow dr"}
+    const m=String(a||"").toLowerCase().split(",")[0].replace(/\b(ste|suite|unit|#)\b.*$/,"").replace(/[.#]/g," ").trim().match(/^(\d+)\s+(.+)$/);
+    if(!m)return null;const w=m[2].split(/\s+/).filter(Boolean).map(x=>SUF[x]||x);
+    return {num:Number(m[1]),street:w.filter(x=>!["n","s","e","w"].includes(x)).join(" ")};
+  }
+  function sameAddr(a,b){const x=addrKey(a),y=addrKey(b);return !!(x&&y&&x.street===y.street&&Math.abs(x.num-y.num)<=30)}
+  const evBase=e=>e.category==="McCook base"||isBaseAddr(e.address);
+  const evAt=(e,addr)=>isBaseAddr(addr)?evBase(e):!evBase(e)&&sameAddr(e.address,addr);
+  async function loadEvents(v){
+    if(EV[v]&&EV[v].date===boardDate)return EV[v].list;
+    let list=[];
+    try{const r=await db.from("vehicle_stop_events").select("started_at,ended_at,category,location_name,address").eq("vehicle_id",v).eq("work_date",boardDate).is("superseded_at",null).order("started_at");
+      if(!r.error)list=(r.data||[]).map(e=>({...e,a:ms(e.started_at),d:ms(e.ended_at)})).filter(e=>e.a!=null)}catch(e){list=[]}
+    EV[v]={date:boardDate,at:Date.now(),list};return list;
+  }
+  /* same rule as vzc-sync lateAssignGate: assigned after it was created → window starts at the truck's last McCook departure (not before created) */
+  function gateOf(t,evs){
+    if(t.gps_since)return ms(t.gps_since);
+    const c=ms(t.created_at),a=ms(t.assigned_at),g=c!=null&&a!=null?Math.max(c,a):(a??c);
+    if(g==null||c==null||a==null||a<=c)return g;
+    const base=evs.filter(evBase);
+    if(base.some(e=>e.a<=a&&(e.d==null||e.d>a)))return g;                        // parked at McCook when assigned
+    const deps=base.map(e=>e.d).filter(d=>d!=null&&d<=a);
+    return deps.length?Math.max(c,Math.max(...deps)):g;
+  }
+  /* first visit to the pickup at/after the window start, then the first drop-off visit after it; fin = trip leg finished */
+  function visitsOf(t,evs){
+    const g=gateOf(t,evs)??0;
+    const pu=t.pickup_address&&!sameAddr(t.pickup_address,t.delivery_address)?evs.find(e=>e.a>=g&&evAt(e,t.pickup_address))||null:null;
+    const from=pu?(pu.d??pu.a):g;
+    const de=t.delivery_address?evs.find(e=>e.a>=from&&(pu?e!==pu:true)&&evAt(e,t.delivery_address))||null:null;
+    const needPu=t.pickup_address&&!isBaseAddr(t.pickup_address)&&!sameAddr(t.pickup_address,t.delivery_address);
+    const fin=de&&(!needPu||pu)?(isBaseAddr(t.delivery_address)?de.a:(de.d??null)):null;
+    return {gate:g,pu:pu&&!isBaseAddr(t.pickup_address)?pu.a:null,de:de?de.a:null,fin};
+  }
+  /* v4.10.1: split at a McCook return — keep only the tasks of the CURRENT trip (not finished before the last McCook return) */
+  function currentTrip(list,evs){
+    if(!evs.length)return {list,done:[]};
+    const V=Object.fromEntries(list.map(t=>[t.id,visitsOf(t,evs)]));
+    const lastReturn=Math.max(-1,...evs.filter(evBase).map(e=>e.a));
+    const done=list.filter(t=>{const f=V[t.id].fin;return f!=null&&lastReturn>=f});
+    return {list:list.filter(t=>!done.includes(t)),done,V};
+  }
 
   function truckOf(t){if(t.vehicle_id)return Number(t.vehicle_id);const r=typeof SHIFT_resolveTruck==="function"&&t.assigned_driver_id?SHIFT_resolveTruck(Number(t.assigned_driver_id),boardDate):null;return r&&r.id?Number(r.id):null}
   function eligible(t){
@@ -18,8 +69,10 @@
       &&String(t.work_date||"").slice(0,10)===boardDate;
   }
   /* earliest GPS sighting of a task (pickup reached / left, or a route stop) */
+  let SEEN={};                                                                    // v4.10.1: task id → {pu,de} from the truck's stop events
   function firstSeen(t){
     let xs=[ms(t.gps_origin_arrived_at),ms(t.gps_departed_at),ms(t.gps_arrived_at)];
+    if(SEEN[t.id])xs.push(SEEN[t.id].pu,SEEN[t.id].de);
     (STOPS_OF(t.id)).forEach(s=>xs.push(ms(s.gps_arrived_at)));
     xs=xs.filter(Boolean);return xs.length?Math.min(...xs):null;
   }
@@ -27,7 +80,8 @@
   /* when GPS already saw a stop, put it where it happened */
   function stopSeen(s,byId){
     if(s.from_stop_id){const st=Object.values(byId.stops).flat().find(x=>Number(x.stop_id)===Number(s.from_stop_id));if(st&&st.gps_arrived_at)return ms(st.gps_arrived_at)}
-    let xs=s.parts.map(p=>{const t=byId.tasks[p.task_id];if(!t||t.is_route)return null;return p.type==="pickup"?ms(t.gps_origin_arrived_at)||ms(t.gps_departed_at):ms(t.gps_arrived_at)}).filter(Boolean);
+    let xs=s.parts.map(p=>{const t=byId.tasks[p.task_id];if(!t||t.is_route)return null;const sv=SEEN[t.id]||{};
+      return p.type==="pickup"?ms(t.gps_origin_arrived_at)||ms(t.gps_departed_at)||sv.pu||null:ms(t.gps_arrived_at)||sv.de||null}).filter(Boolean);
     return xs.length?Math.min(...xs):null;
   }
   function plan(list){
@@ -53,11 +107,17 @@
   async function autoCombine(){
     if(!on()||boardDate!==todayCT()||typeof SHIFT_buildRoute!=="function"||typeof SHIFT_saveRoute!=="function")return false;
     if(document.body.classList.contains("combine-mode"))return false;          // dispatcher is combining by hand
+    for(const k in EV)delete EV[k];                                            // fresh stop events on every board load
     const groups={};
     (allTasks||[]).filter(eligible).forEach(t=>{const v=truckOf(t);if(!v)return;(groups[t.assigned_driver_id+"|"+v]=groups[t.assigned_driver_id+"|"+v]||[]).push(t)});
     let made=[];
     for(const [k,g] of Object.entries(groups)){
       if(g.length<2)continue;
+      const evs=await loadEvents(Number(k.split("|")[1]));
+      const cur=currentTrip(g,evs);
+      if(cur.V)for(const [id,v] of Object.entries(cur.V))SEEN[id]=v;
+      if(cur.list.length<2)continue;                                             // the earlier trip is finished; nothing new to combine yet
+      g.splice(0,g.length,...cur.list);
       const sig=g.map(t=>t.id).sort((a,b)=>a-b).join(",");
       if(lastTry[k]===sig)continue;lastTry[k]=sig;                               // one try per set of tasks (no loop on a refusal)
       const {list,r}=plan(g);
@@ -86,5 +146,5 @@
   function addBtn(){const c=document.getElementById("combineBtn");if(!c||document.getElementById("autoTripsBtn"))return;
     c.insertAdjacentHTML("afterend",`<button class="btn ghost" id="autoTripsBtn" type="button" onclick="SHIFT_toggleAutoTrips()" title="Combine a driver's open tasks on the same truck into one route automatically (today's board)."></button>`);btn()}
   document.readyState==="loading"?document.addEventListener("DOMContentLoaded",addBtn):addBtn();setTimeout(addBtn,1500);
-  window.SHIFT_autoTrips={plan,eligible,autoCombine,firstSeen};
+  window.SHIFT_autoTrips={plan,eligible,autoCombine,firstSeen,gateOf,visitsOf,currentTrip,sameAddr,_seen:v=>{SEEN=v||{}}};
 })();
