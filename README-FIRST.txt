@@ -342,6 +342,9 @@ v4.10.0 (Nov 4 2026) — Auto trips + GPS self-correction (vzc-sync v20). Needs 
  - Tests: supabase/tests/auto-trips (Postgres, 24 checks) and supabase/functions/vzc-sync/tests (deno, incl. the Big Blue
    11/04/2026 replay). vzc-sync v20 also runs before the migration (new writes switched off, noted in the run summary).
 
+v4.10.3 (Nov 5 2026) — Task cards and multi-stop route stops show job_client as a compact "Job …" line
+  above the address (same places as v4.10.2 addresses). Empty job_client shows nothing. No schema change.
+
 v4.10.2 (Nov 5 2026) — Task cards show the task address under the title (pickup address for pickups,
   delivery address otherwise). Empty task address falls back to the matching named place (built-in LOC or
   saved_locations). Multi-stop route cards show each stop's location_address (or linked saved_locations row).

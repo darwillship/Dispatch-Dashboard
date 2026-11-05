@@ -25,9 +25,11 @@ const css=`
 .rs-addr{flex-basis:100%;padding-left:24px;font-size:11px;font-weight:600;color:#8fa0b5;line-height:1.35;overflow-wrap:anywhere;word-break:break-word;max-width:100%}
 .rs-addr a{color:inherit;text-decoration:none}
 .rs-addr a:hover{color:#8fd0ff;text-decoration:underline}
-.rs-origin .rs-addr{padding-left:18px}
+.rs-job{flex-basis:100%;padding-left:24px;font-size:11px;font-weight:800;color:#9fb6cc;line-height:1.3;overflow-wrap:anywhere;word-break:break-word;max-width:100%}
+.rs-origin .rs-addr,.rs-origin .rs-job{padding-left:18px}
 body.light-mode .rs-addr,body.light-mode .rs-addr a{color:#66788a!important}
 body.light-mode .rs-addr a:hover{color:#0a84ff!important}
+body.light-mode .rs-job{color:#4a6176!important}
 .rs-chip{border:1px solid #2b3d4f;background:#132233;color:#9fb3c6;border-radius:999px;padding:1px 7px;font-size:10.5px;font-weight:900;cursor:pointer;min-width:62px;text-align:center}
 .rs-chip.arrived{background:#3a2f0b;border-color:#7a6216;color:#ffd666}
 .rs-chip.done{background:#0f2a1f;border-color:#1f4d37;color:#7ee2a8}
@@ -145,15 +147,22 @@ function stopAddrHtml(addr){
   let href="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(addr);
   return `<div class="rs-addr"><a href="${href}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open in Google Maps">${esc(addr)}</a></div>`;
 }
+function stopJobHtml(job){
+  let label=(typeof formatJobClient==="function"?formatJobClient(job):String(job||"").trim());
+  if(!label)return "";
+  return `<div class="rs-job">${esc(label)}</div>`;
+}
 function stopsHtml(t){
   let st=STOPS[t.id]||[];
   let originAddr=(typeof resolvePlaceAddress==="function"?resolvePlaceAddress(t.pickup_name,t.pickup_address):String(t.pickup_address||"").trim());
-  if(!st.length)return `<div class="route-stops"><div class="rs-row rs-origin">🏁 ${esc(t.pickup_name||"Start")}${stopAddrHtml(originAddr)}</div><div class="rs-row muted">Loading stops…</div></div>`;
-  let rows=[`<div class="rs-row rs-origin"><span>🏁</span><span class="rs-name">${esc(t.pickup_name||"Start")}</span>${t.gps_departed_at?`<span class="rs-time">left ${esc(clock(t.gps_departed_at))}</span>`:""}${stopAddrHtml(originAddr)}</div>`];
+  let originJob=String(t.job_client||"").trim();
+  if(!st.length)return `<div class="route-stops"><div class="rs-row rs-origin">🏁 ${esc(t.pickup_name||"Start")}${stopJobHtml(originJob)}${stopAddrHtml(originAddr)}</div><div class="rs-row muted">Loading stops…</div></div>`;
+  let rows=[`<div class="rs-row rs-origin"><span>🏁</span><span class="rs-name">${esc(t.pickup_name||"Start")}</span>${t.gps_departed_at?`<span class="rs-time">left ${esc(clock(t.gps_departed_at))}</span>`:""}${stopJobHtml(originJob)}${stopAddrHtml(originAddr)}</div>`];
   st.forEach(s=>{
     let r=range(s.gps_arrived_at,s.gps_departed_at),l=legText(s),k=CHIP[s.status]?s.status:"pending";
     let addr=(typeof resolveStopAddress==="function"?resolveStopAddress(s):String(s.location_address||"").trim());
-    rows.push(`<div class="rs-row"><button type="button" class="rs-chip ${k}" data-stop="${s.stop_id}" title="Tap to advance: pending → arrived → done" onclick="event.stopPropagation();SHIFT_advanceStop(${s.stop_id})">${CHIP[k]}</button><span class="rs-name">${esc(s.location_name||"Stop")}</span>${r?`<span class="rs-time">${esc(r)}</span>`:""}${srcMark(s)}${stopAddrHtml(addr)}${l?`<div class="rs-leg">(${esc(l)})</div>`:""}</div>`);
+    let job=(typeof resolveStopJob==="function"?resolveStopJob(s,t):String(t.job_client||"").trim());
+    rows.push(`<div class="rs-row"><button type="button" class="rs-chip ${k}" data-stop="${s.stop_id}" title="Tap to advance: pending → arrived → done" onclick="event.stopPropagation();SHIFT_advanceStop(${s.stop_id})">${CHIP[k]}</button><span class="rs-name">${esc(s.location_name||"Stop")}</span>${r?`<span class="rs-time">${esc(r)}</span>`:""}${srcMark(s)}${stopJobHtml(job)}${stopAddrHtml(addr)}${l?`<div class="rs-leg">(${esc(l)})</div>`:""}</div>`);
   });
   return `<div class="route-stops" title="${esc(SHIFT_routeSummary(t))}">${rows.join("")}</div>`;
 }
@@ -165,7 +174,8 @@ window.taskCard=function(t){
     let n=(STOPS[t.id]||[]).length;
     html=html.replace(/<span class="route-type [^"]*">[^<]*<\/span>/,`<span class="route-type route">🔁 ROUTE${n?" · "+n+" stop"+(n===1?"":"s"):""}</span>`)
              .replace(/<div class="route">[\s\S]*?<\/div>/,`<div class="route">${esc(t.pickup_name||"Start")} → ${esc(t.delivery_name||"…")}</div>${stopsHtml(t)}`)
-             .replace(/<div class="task-addr">[\s\S]*?<\/div>\s*/,"");  /* per-stop addresses cover routes */
+             .replace(/<div class="task-job">[\s\S]*?<\/div>\s*/,"")
+             .replace(/<div class="task-addr">[\s\S]*?<\/div>\s*/,"");  /* per-stop job+address cover routes */
   }
   if(t.combined_into_task_id){
     cls.push("route-combined");
