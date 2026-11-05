@@ -342,6 +342,11 @@ v4.10.0 (Nov 4 2026) — Auto trips + GPS self-correction (vzc-sync v20). Needs 
  - Tests: supabase/tests/auto-trips (Postgres, 24 checks) and supabase/functions/vzc-sync/tests (deno, incl. the Big Blue
    11/04/2026 replay). vzc-sync v20 also runs before the migration (new writes switched off, noted in the run summary).
 
+v4.10.2 (Nov 5 2026) — Task cards show the task address under the title (pickup address for pickups,
+  delivery address otherwise). Empty task address falls back to the matching named place (built-in LOC or
+  saved_locations). Multi-stop route cards show each stop's location_address (or linked saved_locations row).
+  Addresses are muted, wrap at phone width, link to Google Maps; no placeholder when missing. No schema change.
+
 v4.10.1 (Nov 4 2026) — Late assignments + trips split at McCook (vzc-sync v21). NOT deployed; needs Jonathan's OK.
  - Late assignment (vzc-sync): a task assigned after it was created starts its GPS window at the end of the truck's previous
    trip — its last McCook departure at/before the assignment (same day, never before created_at) — instead of the

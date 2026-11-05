@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SHIFT Dispatch</title><meta name="shift-version" content="v4.10.1"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<title>SHIFT Dispatch</title><meta name="shift-version" content="v4.10.2"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#080d14;--panel:#0e1621;--panel2:#111c29;--card:#131f2d;--ink:#f5f7fa;--muted:#8fa0b5;--line:#203246;--blue:#0a84ff;--cyan:#00c6ff;--green:#22c55e;--amber:#ffc107;--purple:#986cff;--red:#ef5350;--steel:#a5b0be;--shadow:0 14px 38px rgba(0,0,0,.25)}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#102c4d 0,#080d14 38%,#060a10 100%);color:var(--ink);font:14px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
@@ -956,6 +956,11 @@ body.light-mode input[type="date"]::-webkit-calendar-picker-indicator{filter:non
 .route-type.shuttle{background:rgba(175,121,255,.15);color:#c49aff;border:1px solid rgba(175,121,255,.3)}
 .route-type.other{background:rgba(150,165,180,.12);color:#b8c5d0;border:1px solid rgba(150,165,180,.25)}
 .route-card-clean .route{font-size:14px!important;line-height:1.25;margin-bottom:5px}
+.task-addr{display:block;font-size:11px;font-weight:600;color:var(--muted);line-height:1.35;margin:-1px 0 5px;overflow-wrap:anywhere;word-break:break-word;max-width:100%}
+.task-addr a{color:inherit;text-decoration:none}
+.task-addr a:hover{color:#8fd0ff;text-decoration:underline}
+body.light-mode .task-addr,body.light-mode .task-addr a{color:#66788a!important}
+body.light-mode .task-addr a:hover{color:#0a84ff!important}
 .route-card-clean .meta{font-size:11px!important}
 .route-job{font-size:11px;color:#8ea2b4;margin-top:4px}
 .route-flags{display:flex;gap:6px;align-items:center;min-height:20px;margin-top:7px}
@@ -1298,6 +1303,30 @@ function autoHint(t){
  if(t.status_source==="manual"||t.status==="in_progress"||t.status==="completed")return `<span class="auto-hint hand" title="Status set by hand on the board or by the driver.">set by hand</span>`+flag;
  return flag}
 function options(){let built=LOC.map((x,i)=>`<option value="builtin:${i}">${x[0]}</option>`).join("");let saved=savedLocations.map(x=>`<option value="saved:${x.id}">${esc(x.name)}</option>`).join("");return '<option value="">Select…</option>'+built+(saved?'<optgroup label="Saved Customers">'+saved+'</optgroup>':'')+'<option value="custom">+ Type a new location…</option>'}
+function resolvePlaceAddress(name,address){
+ let a=String(address||"").trim(); if(a)return a;
+ let n=String(name||"").trim(); if(!n)return "";
+ let nl=n.toLowerCase();
+ let loc=LOC.find(x=>String(x[0]).toLowerCase()===nl); if(loc&&loc[1])return String(loc[1]).trim();
+ let s=(savedLocations||[]).find(x=>String(x.name||"").toLowerCase()===nl); if(s&&s.address)return String(s.address).trim();
+ return "";
+}
+function resolveStopAddress(s){
+ if(!s)return "";
+ let a=String(s.location_address||"").trim(); if(a)return a;
+ if(s.location_id!=null){let x=(savedLocations||[]).find(y=>Number(y.id)===Number(s.location_id)); if(x&&x.address)return String(x.address).trim()}
+ return resolvePlaceAddress(s.location_name,"");
+}
+function taskFocusAddress(t){
+ let isPickup=String(t.task_type||"").toLowerCase().includes("pickup");
+ return isPickup?resolvePlaceAddress(t.pickup_name,t.pickup_address):resolvePlaceAddress(t.delivery_name,t.delivery_address);
+}
+function taskAddrHtml(addr){
+ addr=String(addr||"").trim(); if(!addr)return "";
+ let href="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(addr);
+ return `<div class="task-addr"><a href="${href}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open in Google Maps">${esc(addr)}</a></div>`;
+}
+window.resolvePlaceAddress=resolvePlaceAddress;window.resolveStopAddress=resolveStopAddress;window.taskFocusAddress=taskFocusAddress;window.taskAddrHtml=taskAddrHtml;
 function taskCard(t){
  let st=(t.status||"pending").toLowerCase().replace(" ","_");
  let raw=(t.task_type||"other").toLowerCase();
@@ -1308,6 +1337,7 @@ function taskCard(t){
  return `<article class="task route-card-clean" draggable="true" data-id="${t.id}">
  <div class="route-card-head"><span class="route-type ${typeKey}">${typeLabel}</span><span class="grip">⋮⋮</span></div>
  <div class="route">${esc(t.pickup_name)} → ${esc(t.delivery_name)}</div>
+ ${taskAddrHtml(taskFocusAddress(t))}
  <div class="meta">${t.scheduled_at?fmt(t.scheduled_at):'<span class="asap-chip">No time set</span>'}${t.pallet_qty!=null?" · "+t.pallet_qty+" pallets":""}</div>
  ${t.job_client?`<div class="route-job">${esc(t.job_client)}</div>`:""}
  <div class="route-flags">${high}${status}</div>
@@ -1737,7 +1767,7 @@ async function quickAvailability(driverId,status){
  if(r.error)return alert(r.error.message);
  await load();
 }
-</script><script src="shift-features.js?v=4.10.1"></script><script src="pretrip-exceptions.js?v=4.10.1"></script><script src="timesheet-features.js?v=4.10.1"></script><script src="truck-features.js?v=4.10.1"></script><script src="gps-features.js?v=4.10.1"></script><script src="routes-features.js?v=4.10.1"></script><script src="auto-trips.js?v=4.10.1"></script><script src="live-features.js?v=4.10.1"></script><script src="unplanned-features.js?v=4.10.1"></script><script src="eta.js?v=4.10.1"></script><script src="trucks-board.js?v=4.10.1"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
+</script><script src="shift-features.js?v=4.10.2"></script><script src="pretrip-exceptions.js?v=4.10.2"></script><script src="timesheet-features.js?v=4.10.2"></script><script src="truck-features.js?v=4.10.2"></script><script src="gps-features.js?v=4.10.2"></script><script src="routes-features.js?v=4.10.2"></script><script src="auto-trips.js?v=4.10.2"></script><script src="live-features.js?v=4.10.2"></script><script src="unplanned-features.js?v=4.10.2"></script><script src="eta.js?v=4.10.2"></script><script src="trucks-board.js?v=4.10.2"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
  <div class="shift-cal" role="dialog" aria-modal="true" aria-label="Select date">
   <div class="shift-cal-head">
    <button type="button" onclick="changeCalMonth(-1)">‹</button>
