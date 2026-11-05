@@ -200,7 +200,7 @@ const clear=s=>s.working&&s.start!=null&&s.end!=null&&!s.noTimes;
 function overl(a,b){let w=s=>s.start!=null&&!s.noTimes?[s.start,s.end]:[ctAt(s.date,"00:00"),ctAt(addDays(s.date,1),"00:00")];let [a0,a1]=w(a),[b0,b1]=w(b);return a0<b1&&b0<a1}
 function truckOf(s,all){if(s.vehicleId==null)return null;if(s.vehicleSource==="weekly"&&all.some(o=>o.date===s.date&&o.driverId!==s.driverId&&o.working&&["override","pretrip","hand"].includes(o.vehicleSource)&&o.vehicleId===s.vehicleId&&overl(o,s)))return null;return s.vehicleId}
 function around(date){return [...shiftsFor(addDays(date,-1)),...shiftsFor(date)]}
-let SH=[];  // shifts of boardDate-1 and boardDate
+let SH=[]; window.SH=SH;  // shifts of boardDate-1 and boardDate
 function whoAt(v,t,shifts=SH){
   const c=shifts.filter(s=>clear(s)&&truckOf(s,shifts)===Number(v)&&t>=s.start&&t<s.end);
   if(c.length!==1)return null;
@@ -391,7 +391,7 @@ function messengersCard(){
 }
 
 window.render=function(){
-  SH=around(boardDate);
+  SH=around(boardDate);window.SH=SH;
   let free=t=>!t.assigned_driver_id&&t.vehicle_id==null&&!isMsg(t);
   let plan=tasks.filter(free).sort((a,b)=>((b.planning_stage||"ready")!=="brainstorm")-((a.planning_stage||"ready")!=="brainstorm")||(a.sort_order||0)-(b.sort_order||0)),brain=plan,ready=[];
   let rl=$("ready")?.closest(".lane");if(rl)rl.style.display="none";
@@ -841,7 +841,7 @@ if(window.ResizeObserver){const ro=new ResizeObserver(()=>requestAnimationFrame(
 const msgDrv=d=>!!(d&&d.is_messenger);
 const render40=window.render;
 window.render=function(){
-  SH=around(boardDate);
+  SH=around(boardDate);window.SH=SH;
   let free=t=>!t.assigned_driver_id&&t.vehicle_id==null&&!isMsg(t);
   let plan=tasks.filter(free).sort((a,b)=>((b.planning_stage||"ready")!=="brainstorm")-((a.planning_stage||"ready")!=="brainstorm")||(a.sort_order||0)-(b.sort_order||0));
   let rl=$("ready")?.closest(".lane");if(rl)rl.style.display="none";

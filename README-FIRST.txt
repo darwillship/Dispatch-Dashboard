@@ -342,6 +342,10 @@ v4.10.0 (Nov 4 2026) — Auto trips + GPS self-correction (vzc-sync v20). Needs 
  - Tests: supabase/tests/auto-trips (Postgres, 24 checks) and supabase/functions/vzc-sync/tests (deno, incl. the Big Blue
    11/04/2026 replay). vzc-sync v20 also runs before the migration (new writes switched off, noted in the run summary).
 
+v4.10.5 (Nov 5 2026) — Board driver cards follow Truck Schedule (and daily overrides), not Weekly Hours.
+  Fix: a driver added on Truck Schedule for today no longer stays hidden when Weekly Hours still say Off
+  (Angel Astudillo on Thu 2026-11-05). No data change.
+
 v4.10.4 (Nov 5 2026) — Route stop job lines use only that stop's source_parts task job_client (never the
   parent route job). Start / return rows show no job unless the stop itself owns one; pickup jobs appear only
   on the pickup stop so a pickup number is not repeated on every stop. No schema/data change.
