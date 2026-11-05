@@ -155,13 +155,13 @@ function stopJobHtml(job){
 function stopsHtml(t){
   let st=STOPS[t.id]||[];
   let originAddr=(typeof resolvePlaceAddress==="function"?resolvePlaceAddress(t.pickup_name,t.pickup_address):String(t.pickup_address||"").trim());
-  let originJob=String(t.job_client||"").trim();
-  if(!st.length)return `<div class="route-stops"><div class="rs-row rs-origin">🏁 ${esc(t.pickup_name||"Start")}${stopJobHtml(originJob)}${stopAddrHtml(originAddr)}</div><div class="rs-row muted">Loading stops…</div></div>`;
-  let rows=[`<div class="rs-row rs-origin"><span>🏁</span><span class="rs-name">${esc(t.pickup_name||"Start")}</span>${t.gps_departed_at?`<span class="rs-time">left ${esc(clock(t.gps_departed_at))}</span>`:""}${stopJobHtml(originJob)}${stopAddrHtml(originAddr)}</div>`];
+  /* Origin / start row: never inherit the route job_client. */
+  if(!st.length)return `<div class="route-stops"><div class="rs-row rs-origin">🏁 ${esc(t.pickup_name||"Start")}${stopAddrHtml(originAddr)}</div><div class="rs-row muted">Loading stops…</div></div>`;
+  let rows=[`<div class="rs-row rs-origin"><span>🏁</span><span class="rs-name">${esc(t.pickup_name||"Start")}</span>${t.gps_departed_at?`<span class="rs-time">left ${esc(clock(t.gps_departed_at))}</span>`:""}${stopAddrHtml(originAddr)}</div>`];
   st.forEach(s=>{
     let r=range(s.gps_arrived_at,s.gps_departed_at),l=legText(s),k=CHIP[s.status]?s.status:"pending";
     let addr=(typeof resolveStopAddress==="function"?resolveStopAddress(s):String(s.location_address||"").trim());
-    let job=(typeof resolveStopJob==="function"?resolveStopJob(s,t):String(t.job_client||"").trim());
+    let job=(typeof resolveStopJob==="function"?resolveStopJob(s):"");
     rows.push(`<div class="rs-row"><button type="button" class="rs-chip ${k}" data-stop="${s.stop_id}" title="Tap to advance: pending → arrived → done" onclick="event.stopPropagation();SHIFT_advanceStop(${s.stop_id})">${CHIP[k]}</button><span class="rs-name">${esc(s.location_name||"Stop")}</span>${r?`<span class="rs-time">${esc(r)}</span>`:""}${srcMark(s)}${stopJobHtml(job)}${stopAddrHtml(addr)}${l?`<div class="rs-leg">(${esc(l)})</div>`:""}</div>`);
   });
   return `<div class="route-stops" title="${esc(SHIFT_routeSummary(t))}">${rows.join("")}</div>`;

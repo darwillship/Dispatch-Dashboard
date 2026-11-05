@@ -82,7 +82,7 @@ function toast(text,btnLabel,fn){$("toastText").textContent=text;let b=$("toastB
 function hideToast(){$("toast").classList.remove("show")}
 /* v4.9.3: narrow SECURITY DEFINER RPCs first; fall back to the old direct table queries so nothing breaks
    if an RPC is unavailable. Reads fall back on any error; writes only when the RPC itself is missing. */
-const DRIVER_VERSION="v3.5.0 (SHIFT v4.10.3)";
+const DRIVER_VERSION="v3.5.0 (SHIFT v4.10.4)";
 function rpcMissing(e){return !!e&&(e.code==="PGRST202"||e.code==="42883"||/could not find the function/i.test(e.message||""))}
 async function rpcRead(name,args,direct){try{let r=await db.rpc(name,args);if(!r.error)return r;console.warn("RPC "+name+" failed; using direct query:",r.error.message)}catch(e){console.warn("RPC "+name+" threw; using direct query",e)}return await direct()}
 async function rpcWrite(name,args,direct){let r=await db.rpc(name,args);if(r.error&&rpcMissing(r.error)){console.warn("RPC "+name+" missing; using direct write");return {direct:true,...(await direct())}}return {direct:false,...r}}

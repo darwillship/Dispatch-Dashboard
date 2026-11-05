@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SHIFT Dispatch</title><meta name="shift-version" content="v4.10.3"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<title>SHIFT Dispatch</title><meta name="shift-version" content="v4.10.4"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#080d14;--panel:#0e1621;--panel2:#111c29;--card:#131f2d;--ink:#f5f7fa;--muted:#8fa0b5;--line:#203246;--blue:#0a84ff;--cyan:#00c6ff;--green:#22c55e;--amber:#ffc107;--purple:#986cff;--red:#ef5350;--steel:#a5b0be;--shadow:0 14px 38px rgba(0,0,0,.25)}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#102c4d 0,#080d14 38%,#060a10 100%);color:var(--ink);font:14px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
@@ -1340,16 +1340,33 @@ function taskJobHtml(job){
  let label=formatJobClient(job); if(!label)return "";
  return `<div class="task-job">${esc(label)}</div>`;
 }
-function resolveStopJob(s,parentTask){
- if(!s)return parentTask?String(parentTask.job_client||"").trim():"";
- let ids=(s.source_task_ids||[]).map(Number).filter(Boolean);
- if(ids.length){
-  let pool=(typeof allTasks!=="undefined"&&allTasks&&allTasks.length)?allTasks:(typeof tasks!=="undefined"?tasks:[]);
-  let jobs=[];
-  ids.forEach(id=>{let t=pool.find(x=>Number(x.id)===Number(id)); let j=t&&String(t.job_client||"").trim(); if(j&&!jobs.includes(j))jobs.push(j)});
-  if(jobs.length)return jobs.join("; ");
- }
- return parentTask?String(parentTask.job_client||"").trim():"";
+function resolveStopJob(s){
+ /* Per-stop job only from that stop's own source task(s). Never inherit the parent/route job_client.
+    Board stops come from dispatch_route_stops_v (has source_parts, not source_task_ids).
+    Show a source task's job only on the stop matching its focus (pickup→pickup stop, else→delivery stop)
+    so a pickup number does not appear on the return-to-base delivery stop. */
+ if(!s)return "";
+ let parts=Array.isArray(s.source_parts)?s.source_parts:[];
+ let ids=parts.map(p=>Number(p&&p.task_id)).filter(Boolean);
+ if(!ids.length&&s.source_task_ids)ids=(s.source_task_ids||[]).map(Number).filter(Boolean);
+ if(!ids.length)return "";
+ let pool=(typeof allTasks!=="undefined"&&allTasks&&allTasks.length)?allTasks:(typeof tasks!=="undefined"?tasks:[]);
+ let jobs=[];
+ [...new Set(ids)].forEach(id=>{
+  let t=pool.find(x=>Number(x.id)===Number(id)); if(!t)return;
+  let j=String(t.job_client||"").trim(); if(!j)return;
+  let focusPickup=String(t.task_type||"").toLowerCase().includes("pickup");
+  let partsFor=parts.filter(p=>Number(p&&p.task_id)===Number(id));
+  if(partsFor.length){
+   let ok=partsFor.some(p=>{let ty=String(p.type||"").toLowerCase();return focusPickup?ty==="pickup":ty==="delivery"});
+   if(!ok)return;
+  }else{
+   let st=String(s.stop_type||"").toLowerCase();
+   if(st){ if(focusPickup&&st!=="pickup")return; if(!focusPickup&&st!=="delivery")return; }
+  }
+  if(!jobs.includes(j))jobs.push(j);
+ });
+ return jobs.join("; ");
 }
 window.resolvePlaceAddress=resolvePlaceAddress;window.resolveStopAddress=resolveStopAddress;window.taskFocusAddress=taskFocusAddress;window.taskAddrHtml=taskAddrHtml;
 window.formatJobClient=formatJobClient;window.taskJobHtml=taskJobHtml;window.resolveStopJob=resolveStopJob;
@@ -1793,7 +1810,7 @@ async function quickAvailability(driverId,status){
  if(r.error)return alert(r.error.message);
  await load();
 }
-</script><script src="shift-features.js?v=4.10.3"></script><script src="pretrip-exceptions.js?v=4.10.3"></script><script src="timesheet-features.js?v=4.10.3"></script><script src="truck-features.js?v=4.10.3"></script><script src="gps-features.js?v=4.10.3"></script><script src="routes-features.js?v=4.10.3"></script><script src="auto-trips.js?v=4.10.3"></script><script src="live-features.js?v=4.10.3"></script><script src="unplanned-features.js?v=4.10.3"></script><script src="eta.js?v=4.10.3"></script><script src="trucks-board.js?v=4.10.3"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
+</script><script src="shift-features.js?v=4.10.4"></script><script src="pretrip-exceptions.js?v=4.10.4"></script><script src="timesheet-features.js?v=4.10.4"></script><script src="truck-features.js?v=4.10.4"></script><script src="gps-features.js?v=4.10.4"></script><script src="routes-features.js?v=4.10.4"></script><script src="auto-trips.js?v=4.10.4"></script><script src="live-features.js?v=4.10.4"></script><script src="unplanned-features.js?v=4.10.4"></script><script src="eta.js?v=4.10.4"></script><script src="trucks-board.js?v=4.10.4"></script><div id="shiftCalendarBackdrop" class="shift-cal-backdrop" onclick="calendarBackdropClose(event)">
  <div class="shift-cal" role="dialog" aria-modal="true" aria-label="Select date">
   <div class="shift-cal-head">
    <button type="button" onclick="changeCalMonth(-1)">‹</button>
