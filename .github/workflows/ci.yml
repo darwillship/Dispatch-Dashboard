@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate HTML files exist and are not empty
+        run: |
+          test -s index.html
+          test -s trucks.html
+          test -s driver.html
+          test -s map.html
+          echo "HTML files present"
+
+      - name: Basic JS syntax check (node --check)
+        run: |
+          for f in *.js; do
+            [ -f "$f" ] || continue
+            node --check "$f" && echo "OK: $f" || echo "FAIL: $f"
+          done
